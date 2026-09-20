@@ -76,7 +76,32 @@ test("projected relationships preserve stable graph endpoints", () => {
   assert.equal(relationship.id, "HAS_DEVICE:Area:kitchen:Device:lamp:primary");
   assert.equal(relationship.source, "Area:kitchen");
   assert.equal(relationship.target, "Device:lamp");
-  assert.equal(relationship.sourceClass, "home_assistant");
+  // ON-006: schema.graphql's SourceClass enum only accepts HOME_ASSISTANT/
+  // GENERATED/INFERRED/USER - Memgraph stores the lowercase Python-side
+  // spelling ("home_assistant"), so the resolver must upcase it or every
+  // response carrying a relationship (expandNode, graphElement) fails
+  // graphql-js's enum serialization.
+  assert.equal(relationship.sourceClass, "HOME_ASSISTANT");
+});
+
+test("ON-006: relationship sourceClass is normalized to a valid SourceClass enum value", () => {
+  const known = serializeGraphRelationship({
+    type: "LOCATED_IN", source: "Entity:x", target: "Area:y", id: "1",
+    sourceClass: "inferred", properties: {},
+  });
+  assert.equal(known.sourceClass, "INFERRED");
+
+  const unknown = serializeGraphRelationship({
+    type: "LOCATED_IN", source: "Entity:x", target: "Area:y", id: "2",
+    sourceClass: "some_future_value", properties: {},
+  });
+  assert.equal(unknown.sourceClass, null);
+
+  const missing = serializeGraphRelationship({
+    type: "LOCATED_IN", source: "Entity:x", target: "Area:y", id: "3",
+    properties: {},
+  });
+  assert.equal(missing.sourceClass, null);
 });
 
 test("expand and search reject unsafe or unbounded caller values", async () => {

@@ -26,6 +26,23 @@ const NODE_TYPES = new Map([
 const SAFE_PROPERTY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SENSITIVE_PROPERTY = /(password|passphrase|secret|token|credential|connection|uri|url|host)/i;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+// ON-006: Memgraph stores each relationship's provenance as the lowercase
+// snake_case string the Python integration writes (SOURCE_HOME_ASSISTANT =
+// "home_assistant", SOURCE_GENERATED = "generated", SOURCE_INFERRED =
+// "inferred", SOURCE_USER = "user" - custom_components/ontology/const.py).
+// schema.graphql's SourceClass enum expects HOME_ASSISTANT/GENERATED/
+// INFERRED/USER. Every relationship carries this field, so returning the
+// raw lowercase string straight through made graphql-js's enum
+// serialization throw on the very first relationship in any response -
+// expandNode and graphElement always return relationships and so always
+// hit it (100% failure); initialGraph only returns Area<->Area edges,
+// which this graph has none of, so it never happened to trip over it.
+const SOURCE_CLASS_VALUES = new Set(["HOME_ASSISTANT", "GENERATED", "INFERRED", "USER"]);
+function normalizeSourceClass(raw) {
+  if (!raw) return null;
+  const upper = String(raw).toUpperCase();
+  return SOURCE_CLASS_VALUES.has(upper) ? upper : null;
+}
 
 const INITIAL_GRAPH_QUERY = `
 MATCH (n:Area)
@@ -169,7 +186,7 @@ export function serializeGraphRelationship(value) {
     source,
     target,
     directed: true,
-    sourceClass: value?.sourceClass || value?.source_class || properties.source_class || null,
+    sourceClass: normalizeSourceClass(value?.sourceClass || value?.source_class || properties.source_class),
     properties: graphProperties(properties),
   };
 }
