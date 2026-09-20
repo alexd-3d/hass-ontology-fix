@@ -272,7 +272,10 @@
           "low_battery_threshold": "Low battery threshold (%)",
           "active_power_threshold": "Active power threshold (W)",
           "max_measurement_age_hours": "Maximum measurement age (hours)",
-          "relationship_result_limit": "Maximum relationship results"
+          "relationship_result_limit": "Maximum relationship results",
+          "state_change_debounce_seconds": "State-change sync debounce (seconds)",
+          "excluded_domains": "Domains excluded from state-change sync (comma-separated)",
+          "excluded_entities": "Entities excluded from state-change sync (comma-separated entity_ids)"
         }
       }
     }

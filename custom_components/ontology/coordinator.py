@@ -399,6 +399,61 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
             else:
                 self.change_buffer.publish_upsert([node_id], [], ["state", "ha_id"])
 
+    async def _execute_entity_sync_batch(
+        self, entities: dict[str, graph_builder.EntitySyncContext | None]
+    ) -> dict[str, Exception | None]:
+        """Sync a batch of entities in one pass, refreshing node/relationship
+        counts once for the whole batch instead of once per entity (ON-002).
+
+        `_refresh_counts()` runs two full-graph Cypher scans; calling it once
+        per debounced entity was the dominant amplifier of the sync-overload
+        bug. Each entity's own graph write is still isolated in its own
+        try/except so one bad entity can't abort the rest of the batch -
+        failures are reported per-entity via the returned map, mirroring
+        `_execute_entity_sync`'s single-entity error handling.
+        """
+        results: dict[str, Exception | None] = {}
+        for entity_id, context in entities.items():
+            try:
+                await graph_builder.update_entity(
+                    self.hass, self.memgraph_client, entity_id, context
+                )
+                await user_knowledge.async_reconcile_energy_roles(
+                    self.hass, self.memgraph_client, entity_id
+                )
+            except Exception as err:  # noqa: BLE001
+                results[entity_id] = err
+            else:
+                results[entity_id] = None
+
+        succeeded = [entity_id for entity_id, err in results.items() if err is None]
+        if not succeeded:
+            if results:
+                self._record_failure(next(iter(results.values())))
+            return results
+
+        try:
+            await self._refresh_counts()
+        except Exception as err:  # noqa: BLE001
+            # The per-entity writes above still succeeded; only the shared
+            # counts refresh failed. Surface it against each entity that
+            # otherwise succeeded rather than silently dropping it - retry
+            # will just re-run the (cheap) counts refresh.
+            self._record_failure(err)
+            for entity_id in succeeded:
+                results[entity_id] = err
+            return results
+
+        self._record_success()
+        registry = er.async_get(self.hass)
+        for entity_id in succeeded:
+            node_id = f"Entity:{entity_id}"
+            if registry.entities.get(entity_id) is None and self.hass.states.get(entity_id) is None:
+                self.change_buffer.publish_remove([node_id], [])
+            else:
+                self.change_buffer.publish_upsert([node_id], [], ["state", "ha_id"])
+        return results
+
     async def async_sync_entity(self, entity_id: str) -> None:
         """Refresh a single entity node/relationships (FR-016).
 
@@ -514,6 +569,30 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
             self._track_failed_update("entity", entity_id, err)
         else:
             self._clear_failed_update("entity", entity_id)
+
+    async def async_handle_entity_changes_batch(
+        self, entities: dict[str, graph_builder.EntitySyncContext | None]
+    ) -> None:
+        """Entry point for a batched group of debounced `state_changed`
+        events (ON-002; see `event_listener.StateChangeDebouncer`).
+
+        Syncs every entity in the batch and refreshes node/relationship
+        counts once for the whole batch rather than once per entity. Takes
+        the lock directly (mirroring `_run_incremental`'s FIFO wait-don't-
+        reject semantics) rather than going through `_run_incremental`
+        itself, because it needs the per-entity result map back and
+        `_run_incremental`'s generic `func(*args, **kwargs)` signature
+        doesn't return one.
+        """
+        if not entities:
+            return
+        async with self._lock:
+            results = await self._execute_entity_sync_batch(entities)
+        for entity_id, err in results.items():
+            if err is not None:
+                self._track_failed_update("entity", entity_id, err)
+            else:
+                self._clear_failed_update("entity", entity_id)
 
     async def async_handle_device_change(self, device_id: str) -> None:
         """Entry point for device-registry update/remove events."""

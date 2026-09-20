@@ -74,8 +74,24 @@ SOURCE_USER = "user"
 # Anything else (SOURCE_INFERRED, SOURCE_USER) must never be deleted.
 INTEGRATION_OWNED_SOURCES = (SOURCE_HOME_ASSISTANT, SOURCE_GENERATED)
 
-# Debounce window for state_changed events (research.md §5)
+# Debounce window for state_changed events (research.md §5). ON-002: now
+# user-configurable via CONF_STATE_CHANGE_DEBOUNCE_SECONDS in options; this
+# constant remains the default/fallback value for entries that predate that
+# option (and is what the option's own default is seeded from).
 STATE_CHANGE_DEBOUNCE_SECONDS = 3.0
+CONF_STATE_CHANGE_DEBOUNCE_SECONDS = "state_change_debounce_seconds"
+DEFAULT_STATE_CHANGE_DEBOUNCE_SECONDS = STATE_CHANGE_DEBOUNCE_SECONDS
+MIN_STATE_CHANGE_DEBOUNCE_SECONDS = 0.5
+MAX_STATE_CHANGE_DEBOUNCE_SECONDS = 300.0
+
+# ON-002: comma-separated domains/entity_ids excluded from triggering an
+# incremental sync on `state_changed` (e.g. noisy power/energy sensors,
+# which are measurements, not structural graph data). Empty means nothing
+# is excluded. Parsed by `event_listener._parse_csv`.
+CONF_EXCLUDED_DOMAINS = "excluded_domains"
+DEFAULT_EXCLUDED_DOMAINS = ""
+CONF_EXCLUDED_ENTITIES = "excluded_entities"
+DEFAULT_EXCLUDED_ENTITIES = ""
 
 # How often to automatically retry queued failed_updates (FR-020). A burst of
 # many entities changing state at once (e.g. right after a restart) can
