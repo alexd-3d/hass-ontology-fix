@@ -110,6 +110,7 @@ from .const import (
     SERVICE_SET_ENERGY_ROLE,
     SERVICE_SYNC_ENTITY,
     SERVICE_VALIDATE,
+    SYNC_ACTIVITY_PUBLISH_INTERVAL_SECONDS,
 )
 from .coordinator import OntologyCoordinator
 from .event_listener import async_register_listeners
@@ -321,6 +322,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: OntologyConfigEntry) -> 
             hass,
             _async_prune_agent_audit,
             timedelta(seconds=AGENT_AUDIT_SWEEP_INTERVAL_SECONDS),
+        )
+    )
+
+    # ON-004: publish the "Sync activity" sensor snapshot on a fixed low-frequency
+    # timer, decoupled from actual event/batch volume (see
+    # OntologyCoordinator.async_publish_sync_activity) - the sensor itself can
+    # never add write pressure under load, no matter how busy the debouncer is.
+    entry.async_on_unload(
+        async_track_time_interval(
+            hass,
+            coordinator.async_publish_sync_activity,
+            timedelta(seconds=SYNC_ACTIVITY_PUBLISH_INTERVAL_SECONDS),
         )
     )
 

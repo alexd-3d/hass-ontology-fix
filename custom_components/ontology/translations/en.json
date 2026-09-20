@@ -70,7 +70,8 @@
       "ontology_relationships": { "name": "Relationships" },
       "ontology_last_sync": { "name": "Last sync" },
       "ontology_last_error": { "name": "Last error" },
-      "ontology_schema_version": { "name": "Schema version" }
+      "ontology_schema_version": { "name": "Schema version" },
+      "ontology_sync_activity": { "name": "Sync activity" }
     },
     "button": {
       "ontology_rebuild": { "name": "Rebuild" },

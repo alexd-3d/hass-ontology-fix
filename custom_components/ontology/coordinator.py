@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Callable
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -44,6 +45,7 @@ from .const import (
     HEALTH_OK,
     HEALTH_UNAVAILABLE,
     SUSTAINED_FAILURE_THRESHOLD,
+    SYNC_ACTIVITY_WINDOW_MINUTES,
 )
 from .memgraph_client import MemgraphClient
 from .redact import redact_exception
@@ -101,9 +103,12 @@ class GraphChangeBuffer:
 
     def _publish(self, event: GraphChangeEvent) -> GraphChangeEvent:
         self._events.append(event)
-        for callback in list(self._subscribers.values()):
+        # ON-004: renamed from `callback` - this file now also imports HA's
+        # `callback` decorator (for async_publish_sync_activity), which that
+        # name was shadowing.
+        for subscriber in list(self._subscribers.values()):
             try:
-                callback(event)
+                subscriber(event)
             except Exception:  # noqa: BLE001
                 pass
         return event
@@ -210,6 +215,12 @@ class OntologyState:
     consecutive_failures: int = 0
     failed_updates: list[dict[str, Any]] = field(default_factory=list)
     validation_findings: dict[str, int] = field(default_factory=dict)
+    # ON-004: rolling sync-load snapshot, recomputed periodically from the
+    # cheap bucket counters below - see OntologyCoordinator._activity_*.
+    sync_activity_batches: int = 0
+    sync_activity_events: int = 0
+    sync_activity_avg_batch_size: float = 0.0
+    sync_activity_last_batch_ms: float | None = None
 
 
 class OperationInProgress(Exception):
@@ -232,6 +243,15 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         # Optional callbacks wired by __init__.py to repairs.py (User Story 9).
         self.on_sustained_failure: Any = None
         self.on_failure_cleared: Any = None
+        # ON-004: one counter bucket per minute, circular over the tracked
+        # window. Recording is a single list-index increment (no per-event
+        # timestamp storage/pruning); __init__.py publishes a snapshot into
+        # `self.state.sync_activity_*` on a fixed timer (see
+        # async_publish_sync_activity), decoupled from event/batch volume.
+        self._activity_event_buckets = [0] * SYNC_ACTIVITY_WINDOW_MINUTES
+        self._activity_batch_buckets = [0] * SYNC_ACTIVITY_WINDOW_MINUTES
+        self._activity_synced_buckets = [0] * SYNC_ACTIVITY_WINDOW_MINUTES
+        self._activity_bucket_minute: int | None = None
 
     async def _async_update_data(self) -> OntologyState:
         """Initial full sync: build the graph directly, no clear step (T038)."""
@@ -273,6 +293,67 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         (typically all-zero counts) and never reflect subsequent syncs.
         """
         self.async_set_updated_data(self.state)
+
+    # -- Sync-activity tracking (ON-004) -------------------------------------
+    #
+    # Cheap-by-construction: recording is one list-index increment (no
+    # timestamp log, nothing to prune), and the sensor's HA state is only
+    # published on a fixed timer (see async_publish_sync_activity, wired by
+    # __init__.py) rather than on every event/batch - so the metric's own
+    # overhead can't scale with how busy the integration is.
+
+    def _activity_roll(self, now_minute: int) -> None:
+        """Zero out any buckets that have aged out of the tracked window
+        since the last recorded minute, including the case where nothing at
+        all happened for longer than the window (so the snapshot decays back
+        to zero instead of showing stale data forever)."""
+        last = self._activity_bucket_minute
+        if last is None:
+            self._activity_bucket_minute = now_minute
+            return
+        elapsed = now_minute - last
+        if elapsed <= 0:
+            return  # Same minute (or a clock oddity) - nothing to roll.
+        window = SYNC_ACTIVITY_WINDOW_MINUTES
+        for step in range(1, min(elapsed, window) + 1):
+            idx = (last + step) % window
+            self._activity_event_buckets[idx] = 0
+            self._activity_batch_buckets[idx] = 0
+            self._activity_synced_buckets[idx] = 0
+        self._activity_bucket_minute = now_minute
+
+    def record_sync_event(self) -> None:
+        """Count one raw `state_changed` event accepted by the debouncer,
+        before batching - the "pressure" figure, independent of how many
+        events end up coalesced into a single batch."""
+        now_minute = int(time.time() // 60)
+        self._activity_roll(now_minute)
+        self._activity_event_buckets[now_minute % SYNC_ACTIVITY_WINDOW_MINUTES] += 1
+
+    def record_sync_batch(self, duration_ms: float, batch_size: int) -> None:
+        """Count one executed sync batch, how many entities it covered, and
+        its wall-clock duration (the last two only need a plain +=/assign,
+        no extra bucket beyond what's already being rolled)."""
+        now_minute = int(time.time() // 60)
+        self._activity_roll(now_minute)
+        idx = now_minute % SYNC_ACTIVITY_WINDOW_MINUTES
+        self._activity_batch_buckets[idx] += 1
+        self._activity_synced_buckets[idx] += batch_size
+        self.state.sync_activity_last_batch_ms = round(duration_ms, 1)
+
+    @callback
+    def async_publish_sync_activity(self, _now: datetime | None = None) -> None:
+        """Recompute the rolling snapshot and push it to the sensor (called on
+        a fixed interval by __init__.py, not on every event/batch)."""
+        now_minute = int(time.time() // 60)
+        self._activity_roll(now_minute)
+        events = sum(self._activity_event_buckets)
+        batches = sum(self._activity_batch_buckets)
+        synced = sum(self._activity_synced_buckets)
+        self.state.sync_activity_events = events
+        self.state.sync_activity_batches = batches
+        self.state.sync_activity_avg_batch_size = round(synced / batches, 1) if batches else 0.0
+        self._notify_state_changed()
 
     async def _refresh_counts(self) -> None:
         """Refresh the node/relationship count sensors (User Story 6)."""
@@ -586,8 +667,12 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         """
         if not entities:
             return
+        start = time.monotonic()
         async with self._lock:
             results = await self._execute_entity_sync_batch(entities)
+        # ON-004: cheap - one existing time.monotonic() call plus two int
+        # increments (record_sync_batch), no extra I/O or HA state write.
+        self.record_sync_batch((time.monotonic() - start) * 1000, len(entities))
         for entity_id, err in results.items():
             if err is not None:
                 self._track_failed_update("entity", entity_id, err)

@@ -24,6 +24,7 @@ class OntologySensorEntityDescription(SensorEntityDescription):
     """Describes an Ontology diagnostic sensor."""
 
     value_fn: Callable[[OntologyState], object]
+    attrs_fn: Callable[[OntologyState], dict[str, object]] | None = None
 
 
 def _last_sync_datetime(state: OntologyState) -> datetime | None:
@@ -74,6 +75,21 @@ SENSOR_DESCRIPTIONS: tuple[OntologySensorEntityDescription, ...] = (
         translation_key="ontology_schema_version",
         value_fn=lambda state: state.schema_version,
     ),
+    # ON-004: state is the batch count (real graph writes) over the rolling
+    # window; the raw event/pressure and coalescing-efficiency numbers live
+    # in attributes rather than as separate entities, so this is the only
+    # new sensor added for the whole feature (contracts/dashboard-guide.md).
+    OntologySensorEntityDescription(
+        key="sync_activity",
+        translation_key="ontology_sync_activity",
+        state_class="measurement",
+        value_fn=lambda state: state.sync_activity_batches,
+        attrs_fn=lambda state: {
+            "events_debounced": state.sync_activity_events,
+            "avg_batch_size": state.sync_activity_avg_batch_size,
+            "last_batch_duration_ms": state.sync_activity_last_batch_ms,
+        },
+    ),
 )
 
 
@@ -109,3 +125,11 @@ class OntologySensor(CoordinatorEntity[OntologyCoordinator], SensorEntity):
         """Return the sensor's current value, read directly from coordinator state
         so it reflects the latest health/error even outside a refresh cycle."""
         return self.entity_description.value_fn(self.coordinator.state)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object] | None:
+        """Optional supplementary detail (ON-004's sync_activity sensor uses
+        this instead of adding further sensor entities per metric)."""
+        if self.entity_description.attrs_fn is None:
+            return None
+        return self.entity_description.attrs_fn(self.coordinator.state)

@@ -99,6 +99,15 @@ DEFAULT_EXCLUDED_ENTITIES = ""
 # this periodic sweep drains that backlog without any user action.
 FAILED_UPDATE_RETRY_INTERVAL_SECONDS = 300.0
 
+# ON-004: "Sync activity" diagnostic sensor. Tracked with a tiny fixed-size
+# per-minute bucket array (coordinator._activity_event_buckets/_batch_buckets)
+# rather than a timestamp log, so recording an event/batch is a single O(1)
+# integer increment - no per-event allocation, nothing to prune. The sensor's
+# own HA state is only recomputed and pushed on this interval (not on every
+# event/batch), so the metric can never itself add write pressure under load.
+SYNC_ACTIVITY_WINDOW_MINUTES = 5
+SYNC_ACTIVITY_PUBLISH_INTERVAL_SECONDS = 30.0
+
 # Retry/backoff policy for Memgraph operations (research.md §6)
 RETRY_INITIAL_DELAY_SECONDS = 1.0
 RETRY_MAX_DELAY_SECONDS = 60.0

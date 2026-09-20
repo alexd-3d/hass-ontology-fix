@@ -105,6 +105,10 @@ class StateChangeDebouncer:
             if changed_attributes == {"friendly_name"}:
                 measurement_last_updated = old_state.last_updated
 
+        # ON-004: one raw accepted state-change, counted before batching -
+        # a single cheap int increment, see OntologyCoordinator.record_sync_event.
+        self._coordinator.record_sync_event()
+
         was_empty = not self._pending
         self._pending[entity_id] = EntitySyncContext(
             state=new_state,
