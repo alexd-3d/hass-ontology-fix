@@ -1,4 +1,5 @@
 import { GraphQLScalarType, Kind } from "graphql";
+import neo4j from "neo4j-driver";
 
 export const HARD_LIMITS = Object.freeze({
   initialNodes: 100,
@@ -212,8 +213,15 @@ export function createResolvers({ runQuery, getRevision = () => 0 } = {}) {
       async initialGraph(_parent, { limit = 100 } = {}) {
         const bounded = clamp(limit, 100, HARD_LIMITS.initialNodes);
         const rows = await runQuery(INITIAL_GRAPH_QUERY, {
-          limit: bounded + 1,
-          edgeLimit: HARD_LIMITS.initialEdges + 1,
+          // ON-003: Cypher list-slice bounds ([0..$limit]) require an
+          // Integer parameter. The JS neo4j-driver serializes a plain JS
+          // number as a Float by default (unlike the Python driver, which
+          // maps a Python int straight to Bolt Integer), so Memgraph
+          // rejected every initialGraph/expandNode call with "Expected an
+          // integer for a bound in list slicing, got double." Wrapping with
+          // neo4j.int(...) forces the correct Bolt Integer type.
+          limit: neo4j.int(bounded + 1),
+          edgeLimit: neo4j.int(HARD_LIMITS.initialEdges + 1),
         });
         return graphSlice(rows, bounded, HARD_LIMITS.initialEdges, getRevision());
       },
@@ -222,8 +230,9 @@ export function createResolvers({ runQuery, getRevision = () => 0 } = {}) {
         const boundedEdges = clamp(edgeLimit, 50, HARD_LIMITS.expandEdges);
         const rows = await runQuery(EXPAND_NODE_QUERY, {
           id: boundedString(id, 512),
-          nodeLimit: boundedNodes + 1,
-          edgeLimit: boundedEdges + 1,
+          // ON-003: same list-slice Integer requirement as initialGraph.
+          nodeLimit: neo4j.int(boundedNodes + 1),
+          edgeLimit: neo4j.int(boundedEdges + 1),
         });
         return graphSlice(rows, boundedNodes, boundedEdges, getRevision());
       },
@@ -233,7 +242,9 @@ export function createResolvers({ runQuery, getRevision = () => 0 } = {}) {
         const bounded = clamp(limit, 50, HARD_LIMITS.search);
         const rows = await runQuery(SEARCH_GRAPH_QUERY, {
           term: cleanedTerm,
-          limit: bounded + 1,
+          // ON-003: Memgraph's LIMIT clause is equally strict about
+          // Integer-typed parameters; wrap defensively for consistency.
+          limit: neo4j.int(bounded + 1),
         });
         const nodes = rows.map((row) => serializeGraphNode(row.n || row.node || row));
         return {
