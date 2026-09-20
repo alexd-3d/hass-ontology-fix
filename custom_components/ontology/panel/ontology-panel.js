@@ -618,9 +618,21 @@ class OntologyPanel extends HTMLElement {
     try {
       const slices = [await this._requestExpansion(nodeId)];
       const focusedType = this._graph.getNodeType(nodeId) || this._snapshot?.nodes.find((node) => node.id === nodeId)?.type;
+      // ON-005: device/area auto-expansion reveals every device AND every one
+      // of its entities from a SINGLE request per device - expandNode already
+      // returns entities as direct one-hop neighbors of their device, and
+      // FOCUS_EXPANSION_NODE_LIMIT (250) comfortably covers even an
+      // entity-heavy device (e.g. a 162-entity solar inverter). It
+      // deliberately does NOT also fetch each entity's own neighborhood
+      // (dashboard cards, automations) here - that used to cost one extra
+      // GraphQL round trip PER ENTITY and blew through the shared
+      // AREA_NEIGHBOR_EXPANSION_LIMIT budget on the first entity-heavy
+      // device an area happened to contain, silently starving every other
+      // device in that area of even a first look (the "куце древо" report).
+      // Deeper per-entity links are one click away via the existing
+      // single-node "Expand" button (the ENTITY branch below, unchanged).
       const entitySlices = focusedType === "ENTITY" ? [slices[0]] : [];
       const seenDeviceIds = new Set();
-      const seenEntityIds = new Set(focusedType === "ENTITY" ? [nodeId] : []);
       const deviceQueue = focusedType === "AREA"
         ? slices[0].nodes.filter((node) => node.type === "DEVICE").map((node) => node.id)
         : focusedType === "DEVICE" ? [nodeId]
@@ -635,24 +647,11 @@ class OntologyPanel extends HTMLElement {
           slices.push(deviceSlice);
           expansionCount += 1;
         }
-        const entityIds = this._connectedNodeIds([deviceSlice], new Set([deviceId]), "ENTITY")
-          .filter((entityId) => !seenEntityIds.has(entityId));
-        for (const entityId of entityIds) {
-          if (expansionCount >= AREA_NEIGHBOR_EXPANSION_LIMIT) break;
-          seenEntityIds.add(entityId);
-          const entitySlice = await this._requestExpansion(entityId);
-          entitySlices.push(entitySlice);
-          slices.push(entitySlice);
-          expansionCount += 1;
-          for (const relatedDeviceId of this._connectedNodeIds([entitySlice], new Set([entityId]), "DEVICE")) {
-            if (!seenDeviceIds.has(relatedDeviceId)) deviceQueue.push(relatedDeviceId);
-          }
-        }
       }
       if (deviceQueue.length) slices[0] = { ...slices[0], truncated: true };
       const entityIds = entitySlices.flatMap((slice) => slice.nodes || []).filter((node) => node.type === "ENTITY").map((node) => node.id);
       const cardIds = this._connectedNodeIds(entitySlices, new Set(entityIds), "DASHBOARD_CARD");
-      const expandedCardIds = cardIds.slice(0, Math.max(AREA_NEIGHBOR_EXPANSION_LIMIT - expansionCount, 0));
+      const expandedCardIds = cardIds.slice(0, AREA_NEIGHBOR_EXPANSION_LIMIT);
       const cardResults = await Promise.allSettled(expandedCardIds.map((id) => this._requestExpansion(id)));
       slices.push(...cardResults.filter((result) => result.status === "fulfilled").map((result) => result.value));
       if (cardIds.length > expandedCardIds.length) slices[0] = { ...slices[0], truncated: true };
