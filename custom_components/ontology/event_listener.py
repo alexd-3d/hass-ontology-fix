@@ -2,9 +2,10 @@
 
 Registry changes (area/device/entity add/remove/update) are forwarded to the
 coordinator immediately. `state_changed` events are filtered to primary
-state changes only (FR-012a) and debounced per-entity (research.md §5,
-FR-011) before being forwarded, so rapid successive changes collapse into a
-single sync.
+state changes only (FR-012a) and debounced across a single shared batch
+window (research.md §5, FR-011; ON-002) before being forwarded, so rapid
+successive changes - across any number of entities - collapse into a single
+batched sync instead of one sync per entity.
 """
 
 from __future__ import annotations
@@ -19,22 +20,67 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import STATE_CHANGE_DEBOUNCE_SECONDS
+from .const import (
+    CONF_EXCLUDED_DOMAINS,
+    CONF_EXCLUDED_ENTITIES,
+    CONF_STATE_CHANGE_DEBOUNCE_SECONDS,
+    DEFAULT_EXCLUDED_DOMAINS,
+    DEFAULT_EXCLUDED_ENTITIES,
+    STATE_CHANGE_DEBOUNCE_SECONDS,
+)
 from .coordinator import OntologyCoordinator
 from .graph_builder import EntitySyncContext
 
 _LOGGER = logging.getLogger(__name__)
 
 
+def _parse_csv(value: str) -> set[str]:
+    """Parse a comma-separated options string into a normalized set."""
+    if not value:
+        return set()
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
 class StateChangeDebouncer:
-    """Collapses rapid `state_changed` events for the same entity into a
-    single coordinator update within a debounce window (research.md §5)."""
+    """Collapses `state_changed` events across ALL entities into a single
+    shared batch window instead of one independent timer per entity
+    (ON-002).
+
+    Previously every entity had its own debounce timer, so N entities
+    changing state within the same window still produced up to N separate
+    coordinator syncs - and each sync's `_refresh_counts()` runs two
+    full-graph Cypher scans, so that fan-out was the dominant amplifier of
+    the sync-overload bug, not just "many small writes" on their own.
+
+    Now a single timer is armed only on the empty -> non-empty transition of
+    the pending-entity queue, and is never rearmed by further events
+    arriving inside the same window. On expiry, every entity accumulated
+    during the window is flushed to the coordinator as one batch
+    (`OntologyCoordinator.async_handle_entity_changes_batch`), which
+    refreshes counts once for the whole batch. This puts a hard ceiling on
+    sync frequency of one batch per debounce window, independent of how many
+    entities changed or how often.
+    """
 
     def __init__(self, hass: HomeAssistant, coordinator: OntologyCoordinator) -> None:
         self._hass = hass
         self._coordinator = coordinator
-        self._timers: dict[str, asyncio.TimerHandle] = {}
-        self._contexts: dict[str, EntitySyncContext] = {}
+        self._timer: asyncio.TimerHandle | None = None
+        self._pending: dict[str, EntitySyncContext] = {}
+
+    def _debounce_seconds(self) -> float:
+        options = self._coordinator.entry.options
+        return options.get(
+            CONF_STATE_CHANGE_DEBOUNCE_SECONDS, STATE_CHANGE_DEBOUNCE_SECONDS
+        )
+
+    def _excluded_domains(self) -> set[str]:
+        options = self._coordinator.entry.options
+        return _parse_csv(options.get(CONF_EXCLUDED_DOMAINS, DEFAULT_EXCLUDED_DOMAINS))
+
+    def _excluded_entities(self) -> set[str]:
+        options = self._coordinator.entry.options
+        return _parse_csv(options.get(CONF_EXCLUDED_ENTITIES, DEFAULT_EXCLUDED_ENTITIES))
 
     @callback
     def async_handle_state_changed(self, event: Event) -> None:
@@ -43,6 +89,9 @@ class StateChangeDebouncer:
         old_state = event.data.get("old_state")
         new_state = event.data.get("new_state")
         if entity_id is None or new_state is None:
+            return
+        domain = entity_id.split(".", 1)[0]
+        if entity_id in self._excluded_entities() or domain in self._excluded_domains():
             return
         measurement_last_updated = new_state.last_updated
         if old_state is not None and old_state.state == new_state.state:
@@ -56,32 +105,30 @@ class StateChangeDebouncer:
             if changed_attributes == {"friendly_name"}:
                 measurement_last_updated = old_state.last_updated
 
-        existing = self._timers.pop(entity_id, None)
-        if existing is not None:
-            existing.cancel()
-
-        self._contexts[entity_id] = EntitySyncContext(
+        was_empty = not self._pending
+        self._pending[entity_id] = EntitySyncContext(
             state=new_state,
             measurement_last_updated=measurement_last_updated,
         )
-        handle = self._hass.loop.call_later(
-            STATE_CHANGE_DEBOUNCE_SECONDS, self._fire, entity_id
-        )
-        self._timers[entity_id] = handle
+        if was_empty:
+            self._timer = self._hass.loop.call_later(
+                self._debounce_seconds(), self._fire
+            )
 
-    def _fire(self, entity_id: str) -> None:
-        self._timers.pop(entity_id, None)
-        context = self._contexts.pop(entity_id)
+    def _fire(self) -> None:
+        self._timer = None
+        batch = self._pending
+        self._pending = {}
         self._hass.async_create_task(
-            self._coordinator.async_handle_entity_change(entity_id, context)
+            self._coordinator.async_handle_entity_changes_batch(batch)
         )
 
     def async_cancel_all(self) -> None:
-        """Cancel all pending debounce timers (called on unload)."""
-        for handle in self._timers.values():
-            handle.cancel()
-        self._timers.clear()
-        self._contexts.clear()
+        """Cancel the pending batch timer (called on unload)."""
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        self._pending.clear()
 
 
 def async_register_listeners(

@@ -16,6 +16,8 @@ from .const import (
     CONF_AUTO_CLASSIFY,
     CONF_DATABASE,
     CONF_ENCRYPTED,
+    CONF_EXCLUDED_DOMAINS,
+    CONF_EXCLUDED_ENTITIES,
     CONF_GRAPHQL_TOKEN,
     CONF_GRAPHQL_URL,
     CONF_HOST,
@@ -26,11 +28,14 @@ from .const import (
     CONF_PASSWORD,
     CONF_PORT,
     CONF_RELATIONSHIP_RESULT_LIMIT,
+    CONF_STATE_CHANGE_DEBOUNCE_SECONDS,
     CONF_USERNAME,
     DEFAULT_ACTIVE_POWER_THRESHOLD,
     DEFAULT_AUTO_CLASSIFY,
     DEFAULT_DATABASE,
     DEFAULT_ENCRYPTED,
+    DEFAULT_EXCLUDED_DOMAINS,
+    DEFAULT_EXCLUDED_ENTITIES,
     DEFAULT_GRAPHQL_TOKEN,
     DEFAULT_GRAPHQL_URL,
     DEFAULT_LOW_BATTERY_THRESHOLD,
@@ -39,8 +44,11 @@ from .const import (
     DEFAULT_MCP_ENABLED,
     DEFAULT_PORT,
     DEFAULT_RELATIONSHIP_RESULT_LIMIT,
+    DEFAULT_STATE_CHANGE_DEBOUNCE_SECONDS,
     DOMAIN,
     MAX_RELATIONSHIP_RESULT_LIMIT,
+    MAX_STATE_CHANGE_DEBOUNCE_SECONDS,
+    MIN_STATE_CHANGE_DEBOUNCE_SECONDS,
 )
 from .memgraph_client import CannotConnect, InvalidAuth, MemgraphClient
 
@@ -285,6 +293,30 @@ def _options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             ),
         )
     ] = vol.All(int, vol.Range(min=1, max=MAX_RELATIONSHIP_RESULT_LIMIT))
+    # ON-002: state_changed batch-debounce window and domain/entity excludes.
+    schema_dict[
+        vol.Optional(
+            CONF_STATE_CHANGE_DEBOUNCE_SECONDS,
+            default=defaults.get(
+                CONF_STATE_CHANGE_DEBOUNCE_SECONDS, DEFAULT_STATE_CHANGE_DEBOUNCE_SECONDS
+            ),
+        )
+    ] = vol.All(
+        _FINITE_FLOAT,
+        vol.Range(min=MIN_STATE_CHANGE_DEBOUNCE_SECONDS, max=MAX_STATE_CHANGE_DEBOUNCE_SECONDS),
+    )
+    schema_dict[
+        vol.Optional(
+            CONF_EXCLUDED_DOMAINS,
+            default=defaults.get(CONF_EXCLUDED_DOMAINS, DEFAULT_EXCLUDED_DOMAINS),
+        )
+    ] = str
+    schema_dict[
+        vol.Optional(
+            CONF_EXCLUDED_ENTITIES,
+            default=defaults.get(CONF_EXCLUDED_ENTITIES, DEFAULT_EXCLUDED_ENTITIES),
+        )
+    ] = str
     return vol.Schema(schema_dict)
 
 
@@ -310,6 +342,9 @@ class OntologyOptionsFlow(OptionsFlow):
                     CONF_ACTIVE_POWER_THRESHOLD,
                     CONF_MAX_MEASUREMENT_AGE_HOURS,
                     CONF_RELATIONSHIP_RESULT_LIMIT,
+                    CONF_STATE_CHANGE_DEBOUNCE_SECONDS,
+                    CONF_EXCLUDED_DOMAINS,
+                    CONF_EXCLUDED_ENTITIES,
                 )
             }
             try:
@@ -348,6 +383,16 @@ class OntologyOptionsFlow(OptionsFlow):
                         CONF_RELATIONSHIP_RESULT_LIMIT: user_input.get(
                             CONF_RELATIONSHIP_RESULT_LIMIT,
                             DEFAULT_RELATIONSHIP_RESULT_LIMIT,
+                        ),
+                        CONF_STATE_CHANGE_DEBOUNCE_SECONDS: user_input.get(
+                            CONF_STATE_CHANGE_DEBOUNCE_SECONDS,
+                            DEFAULT_STATE_CHANGE_DEBOUNCE_SECONDS,
+                        ),
+                        CONF_EXCLUDED_DOMAINS: user_input.get(
+                            CONF_EXCLUDED_DOMAINS, DEFAULT_EXCLUDED_DOMAINS
+                        ),
+                        CONF_EXCLUDED_ENTITIES: user_input.get(
+                            CONF_EXCLUDED_ENTITIES, DEFAULT_EXCLUDED_ENTITIES
                         ),
                     },
                 )
