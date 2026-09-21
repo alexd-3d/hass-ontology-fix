@@ -64,7 +64,58 @@ const TYPE_FALLBACKS = Object.freeze({
   DASHBOARD_CARD: "mdi:card-outline",
   SEMANTIC_TYPE: "mdi:tag-outline",
   VALIDATION_FINDING: "mdi:alert-circle-outline",
+  // ON-010: per-entity semantic classification asset nodes (see resolvers.js
+  // NODE_TYPES) - each of the 8 rule labels a real entity can be tagged with.
+  BATTERY_POWERED_DEVICE: "mdi:battery-outline",
+  ENERGY_ASSET: "mdi:flash",
+  OCCUPANCY_SENSOR: "mdi:motion-sensor",
+  CLIMATE_DEVICE: "mdi:thermostat",
+  NETWORK_DEVICE: "mdi:lan-connect",
+  SECURITY_DEVICE: "mdi:shield-home-outline",
+  VEHICLE: "mdi:car",
+  GAS_CYLINDER: "mdi:propane-tank-outline",
+  // ON-011: Reolink camera/NVR asset nodes (manufacturer-matched).
+  CAMERA: "mdi:cctv",
   OTHER: "mdi:help-circle-outline",
+});
+
+// ON-012: a low-battery/unavailable indicator, layered on top of whichever
+// icon resolveOntologyIcon would otherwise pick, so the Explorer surfaces
+// "this needs attention" (dead sensor, flat battery) without the user having
+// to click into every node's properties.
+const BATTERY_LOW_PERCENT = 20;
+
+function propertyValue(node, name) {
+  return (node.properties || []).find((property) => property.name === name)?.value;
+}
+
+// Returns "unavailable" | "battery_low" | null. Reads only properties
+// graph_builder.py already mirrors onto Entity nodes (state, device_class,
+// measurement_kind/status, battery_percentage) - no backend/schema change
+// needed for this to work.
+export function nodeAttention(node) {
+  if (node.unavailable) return "unavailable";
+  if (propertyValue(node, "device_class") !== "battery") return null;
+  const domain = typeof node.haId === "string" ? node.haId.split(".")[0] : null;
+  if (domain === "binary_sensor") {
+    // A battery-class binary_sensor's "on" state IS the low-battery alert.
+    return node.state === "on" ? "battery_low" : null;
+  }
+  if (
+    propertyValue(node, "measurement_kind") === "battery" &&
+    propertyValue(node, "measurement_status") === "available"
+  ) {
+    const percentage = propertyValue(node, "battery_percentage");
+    if (typeof percentage === "number" && percentage <= BATTERY_LOW_PERCENT) {
+      return "battery_low";
+    }
+  }
+  return null;
+}
+
+const ATTENTION_ICONS = Object.freeze({
+  unavailable: "mdi:access-point-network-off",
+  battery_low: "mdi:battery-alert",
 });
 
 function safeIcon(value) {
@@ -87,13 +138,19 @@ export function resolveOntologyIcon(node, hass) {
   const stateIcon = hass?.states?.[node.haId]?.attributes?.icon;
   if (safeIcon(stateIcon)) return stateIcon;
 
-  // 4. HA area registry icon
+  // 4. ON-012: attention indicator (dead sensor / low battery) wins over the
+  // domain/area fallbacks below, but never over an explicit icon set above -
+  // the point is to surface "look at this", not to hide a deliberate choice.
+  const attention = nodeAttention(node);
+  if (attention) return ATTENTION_ICONS[attention];
+
+  // 5. HA area registry icon
   if (node.type === "AREA" && hass?.areas?.[node.haId]?.icon) {
     const areaIcon = safeIcon(hass.areas[node.haId].icon);
     if (areaIcon) return areaIcon;
   }
 
-  // 5. Entity: derive icon from domain
+  // 6. Entity: derive icon from domain
   if (node.type === "ENTITY" && typeof node.haId === "string" && node.haId.includes(".")) {
     const domain = node.haId.split(".")[0];
     const domainIcon = DOMAIN_ICONS[domain];

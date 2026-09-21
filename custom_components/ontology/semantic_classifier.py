@@ -31,6 +31,7 @@ from .const import (
     ENERGY_ROLE_STORAGE,
     LABEL_AREA,
     LABEL_BATTERY_POWERED_DEVICE,
+    LABEL_CAMERA,
     LABEL_CLIMATE_DEVICE,
     LABEL_ENERGY_ASSET,
     LABEL_ENTITY,
@@ -69,6 +70,18 @@ class ClassificationRule:
     domains: tuple[str, ...] = ()
     device_classes: tuple[str, ...] = ()
     keywords: tuple[str, ...] = ()
+    # ON-011: match by the owning device's manufacturer instead of domain/
+    # device_class/keyword - needed for entities (e.g. Reolink's AI "vehicle
+    # detected" binary_sensor) whose own id/name gives no hint they belong to
+    # a particular piece of hardware. A rule with `manufacturers` set matches
+    # on manufacturer ALONE (see `_rule_matches`), ignoring device_classes/
+    # keywords entirely, so it always wins for that hardware regardless of
+    # what the entity looks like.
+    manufacturers: tuple[str, ...] = ()
+    # Lets an unrelated rule (e.g. LABEL_VEHICLE's generic "vehicle" keyword)
+    # exclude a manufacturer's entities from also matching it, so one entity
+    # isn't tagged both Camera and the old misleading Vehicle type.
+    exclude_manufacturers: tuple[str, ...] = ()
 
 
 # Declarative rule table (research.md §5): evaluated against every entity on
@@ -86,6 +99,12 @@ RULES: tuple[ClassificationRule, ...] = (
         REL_MEASURED_BY,
         domains=("device_tracker", "sensor", "binary_sensor"),
         keywords=("car", "vehicle", "truck", "ev charger"),
+        # ON-011: Reolink's AI object-detection binary_sensors are literally
+        # named "*_vehicle" (front_vehicle, back_01_vehicle, back_02_vehicle)
+        # but they're camera-detection events, not an actual car/EV charger -
+        # excluded here so LABEL_CAMERA (matched below by manufacturer) is
+        # their only semantic type.
+        exclude_manufacturers=("Reolink",),
     ),
     ClassificationRule(
         LABEL_ENERGY_ASSET,
@@ -129,6 +148,14 @@ RULES: tuple[ClassificationRule, ...] = (
         device_classes=("battery",),
         keywords=("battery",),
     ),
+    # ON-011: everything tied to Alex's Reolink cameras/NVR - motion sensors,
+    # AI detection binary_sensors, stream/snapshot entities, firmware sensors
+    # - regardless of domain or naming, matched purely by device manufacturer.
+    ClassificationRule(
+        LABEL_CAMERA,
+        REL_OBSERVED_BY,
+        manufacturers=("Reolink",),
+    ),
 )
 
 
@@ -144,6 +171,7 @@ def _entity_signals(hass: HomeAssistant, entity_id: str) -> dict[str, Any]:
 
     area_name = ""
     device_name = ""
+    manufacturer = None
     area_id = _resolve_area_id(hass, entity_id)
     if area_id:
         area = ar.async_get(hass).async_get_area(area_id)
@@ -153,6 +181,8 @@ def _entity_signals(hass: HomeAssistant, entity_id: str) -> dict[str, Any]:
         device = dr.async_get(hass).devices.get(entry.device_id)
         if device is not None:
             device_name = device.name_by_user or device.name or ""
+            # ON-011: manufacturer-based matching signal (e.g. LABEL_CAMERA)
+            manufacturer = device.manufacturer
 
     text = f" {entity_id} {friendly_name} {device_name} {area_name} ".lower()
     return {
@@ -160,6 +190,10 @@ def _entity_signals(hass: HomeAssistant, entity_id: str) -> dict[str, Any]:
         "device_class": device_class,
         "text": text,
         "has_device": bool(entry and entry.device_id),
+        # ON-010: exposed so callers (asset-node naming) don't have to
+        # duplicate this fallback (state friendly_name, else entity_id).
+        "friendly_name": friendly_name,
+        "manufacturer": manufacturer,
     }
 
 
@@ -181,6 +215,15 @@ def _resolve_area_id(hass: HomeAssistant, entity_id: str) -> str | None:
 def _rule_matches(rule: ClassificationRule, signals: dict[str, Any]) -> bool:
     if rule.domains and signals["domain"] not in rule.domains:
         return False
+    # ON-011: a manufacturer exclusion always wins, before any other signal -
+    # e.g. keeps Reolink's "*_vehicle" binary_sensors out of LABEL_VEHICLE.
+    if rule.exclude_manufacturers and signals.get("manufacturer") in rule.exclude_manufacturers:
+        return False
+    # A manufacturer-matching rule (e.g. LABEL_CAMERA) is matched purely by
+    # manufacturer - it ignores device_classes/keywords entirely so it can't
+    # accidentally match unrelated hardware that happens to share a keyword.
+    if rule.manufacturers:
+        return signals.get("manufacturer") in rule.manufacturers
     if rule.device_classes and signals["device_class"] in rule.device_classes:
         return True
     if rule.keywords and any(keyword in signals["text"] for keyword in rule.keywords):
@@ -249,6 +292,12 @@ async def _classify_entity(hass: HomeAssistant, client: MemgraphClient, entity_i
     """Classify a single entity against every rule; returns the number of
     semantic types applied (skipping any pair with a user override, FR-006)."""
     applied = 0
+    # ON-010: the per-entity asset node below used to be merged with no
+    # properties at all, so the Explorer had nothing to show but its raw
+    # `<entity_id>::<Label>` ha_id (truncated in the node list). Carrying the
+    # entity's own friendly_name over gives it a readable label instead,
+    # same as a real Entity node falls back to friendly_name/ha_id.
+    friendly_name = _entity_signals(hass, entity_id).get("friendly_name") or entity_id
     for rule in matching_rules(hass, entity_id):
         if await _has_user_override(client, entity_id, rule.label):
             _LOGGER.debug(
@@ -268,7 +317,9 @@ async def _classify_entity(hass: HomeAssistant, client: MemgraphClient, entity_i
             source=SOURCE_INFERRED,
         )
         asset_id = semantic_ha_id(entity_id, rule.label)
-        await merge_node(client, rule.label, asset_id, {}, source=SOURCE_INFERRED)
+        await merge_node(
+            client, rule.label, asset_id, {"name": friendly_name}, source=SOURCE_INFERRED
+        )
         await merge_relationship(
             client,
             rule.label,

@@ -131,6 +131,34 @@ test("expand and search reject unsafe or unbounded caller values", async () => {
   }
 });
 
+test("ON-010: semantic classification asset node labels resolve to their own GraphNodeType, not OTHER", () => {
+  // Regression guard: custom_components/ontology/semantic_classifier.py
+  // creates one node per (entity, matched rule) carrying ONLY the rule's
+  // label (e.g. "BatteryPoweredDevice") - never "Entity" - so before these
+  // were added to NODE_TYPES every classified entity's asset node silently
+  // fell back to OTHER in the Explorer (reported by Alex: PIR-floor-2's
+  // battery/voltage/occupancy sub-entities all showing as "Other").
+  const cases = [
+    ["BatteryPoweredDevice", "BATTERY_POWERED_DEVICE"],
+    ["EnergyAsset", "ENERGY_ASSET"],
+    ["OccupancySensor", "OCCUPANCY_SENSOR"],
+    ["ClimateDevice", "CLIMATE_DEVICE"],
+    ["NetworkDevice", "NETWORK_DEVICE"],
+    ["SecurityDevice", "SECURITY_DEVICE"],
+    ["Vehicle", "VEHICLE"],
+    ["GasCylinder", "GAS_CYLINDER"],
+    // ON-011: added alongside the manufacturer-based Camera rule.
+    ["Camera", "CAMERA"],
+  ];
+  for (const [label, expectedType] of cases) {
+    const node = serializeGraphNode({
+      labels: [label],
+      properties: { ha_id: `sensor.example::${label}`, name: "Example Sensor" },
+    });
+    assert.equal(node.type, expectedType, `label ${label} should resolve to ${expectedType}`);
+  }
+});
+
 test("safe serialization produces stable IDs and bounded redacted properties", () => {
   const node = serializeGraphNode({
     labels: ["Entity"],

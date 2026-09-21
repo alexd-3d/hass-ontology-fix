@@ -1,5 +1,5 @@
-import { ontologyNodeColor, UNASSIGNED_ID, SYNTHETIC_HOME_ID } from "./ontology-graph.js?v=4.0.0b33";
-import { resolveOntologyIcon } from "./ontology-icons.js?v=4.0.0b33";
+import { ontologyNodeColor, UNASSIGNED_ID, SYNTHETIC_HOME_ID } from "./ontology-graph.js?v=4.1.0";
+import { resolveOntologyIcon, nodeAttention } from "./ontology-icons.js?v=4.1.0";
 
 const STATE_MESSAGES = {
   loading: ["Loading ontology graph", "Preparing areas."],
@@ -82,7 +82,7 @@ class OntologyPanel extends HTMLElement {
         .filter-group { display: grid; gap: 7px; margin-bottom: 12px; }
         .filter-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
         .legend { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; align-items: center; margin: 0 0 20px; font-size: 13px; }
-        .legend ha-icon { color: var(--ontology-node-color, var(--primary-text-color, #172126)); }
+        .legend ha-icon, .node-list ha-icon { color: var(--ontology-node-color, var(--primary-text-color, #172126)); }
         .legend small { color: var(--secondary-text-color, #56666d); }
         .node-list, .relationship-list { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
         .node-list button, .relationship-list button { width: 100%; min-height: 42px; padding: 7px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
@@ -438,15 +438,20 @@ class OntologyPanel extends HTMLElement {
       button.type = "button";
       button.dataset.nodeId = node.id;
       button.setAttribute("aria-pressed", "false");
-      const status = node.unavailable ? ", unavailable" : node.type === "VALIDATION_FINDING" ? ", validation finding" : "";
+      // ON-012: "not working" covers both a dropped/unavailable node and a
+      // battery-class sensor reporting a low charge - nodeAttention() reads
+      // the same mirrored properties the 3D graph's red highlight uses.
+      const attention = nodeAttention(node);
+      const status = attention === "battery_low" ? ", low battery" : node.unavailable ? ", unavailable" : node.type === "VALIDATION_FINDING" ? ", validation finding" : "";
       button.setAttribute("aria-label", `${node.label}, ${node.type.toLowerCase().replaceAll("_", " ")}${status}`);
       const icon = document.createElement("ha-icon");
       icon.setAttribute("icon", resolveOntologyIcon(node, this._hass));
       icon.setAttribute("aria-hidden", "true");
+      if (attention) icon.style.setProperty("--ontology-node-color", ontologyNodeColor("VALIDATION_FINDING"));
       const text = document.createElement("span");
       text.textContent = node.label;
       const detail = document.createElement("small");
-      detail.textContent = node.presentationOnly ? "Presentation only" : node.unavailable ? "Unavailable" : node.type.toLowerCase().replaceAll("_", " ");
+      detail.textContent = attention === "battery_low" ? "Low battery" : node.presentationOnly ? "Presentation only" : node.unavailable ? "Unavailable" : node.type.toLowerCase().replaceAll("_", " ");
       text.append(detail);
       button.append(icon, text);
       button.addEventListener("click", () => this._graph.selectNode(node.id));
@@ -503,11 +508,15 @@ class OntologyPanel extends HTMLElement {
       label.textContent = `${node.type.toLowerCase().replaceAll("_", " ")} · ${node.label}`;
       this._legend.append(icon, label);
     }
+    // ON-012: this used to say "Unavailable nodes are dimmed" - no dimming
+    // logic ever existed anywhere in the codebase, so it described a feature
+    // that was never built. Replaced with the red highlight that now is.
     const unavailableIcon = document.createElement("ha-icon");
-    unavailableIcon.setAttribute("icon", "mdi:eye-off-outline");
+    unavailableIcon.setAttribute("icon", "mdi:access-point-network-off");
     unavailableIcon.setAttribute("aria-hidden", "true");
+    unavailableIcon.style.setProperty("--ontology-node-color", ontologyNodeColor("VALIDATION_FINDING"));
     const unavailableLabel = document.createElement("small");
-    unavailableLabel.textContent = "Unavailable nodes are dimmed";
+    unavailableLabel.textContent = "Unavailable or low-battery nodes are highlighted red";
     this._legend.append(unavailableIcon, unavailableLabel);
   }
 

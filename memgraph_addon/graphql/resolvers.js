@@ -22,6 +22,21 @@ const NODE_TYPES = new Map([
   ["DashboardCard", "DASHBOARD_CARD"],
   ["SemanticType", "SEMANTIC_TYPE"],
   ["ValidationFinding", "VALIDATION_FINDING"],
+  // ON-010: per-entity semantic classification asset nodes
+  // (semantic_classifier.py `merge_node(client, rule.label, ...)` - each
+  // node carries ONLY its rule label, never "Entity", so these were falling
+  // through to OTHER for every classified entity.
+  ["BatteryPoweredDevice", "BATTERY_POWERED_DEVICE"],
+  ["EnergyAsset", "ENERGY_ASSET"],
+  ["OccupancySensor", "OCCUPANCY_SENSOR"],
+  ["ClimateDevice", "CLIMATE_DEVICE"],
+  ["NetworkDevice", "NETWORK_DEVICE"],
+  ["SecurityDevice", "SECURITY_DEVICE"],
+  ["Vehicle", "VEHICLE"],
+  ["GasCylinder", "GAS_CYLINDER"],
+  // ON-011: Reolink camera/NVR asset nodes (matched by device manufacturer,
+  // see semantic_classifier.py) - was falling through to OTHER like the rest.
+  ["Camera", "CAMERA"],
 ]);
 const SAFE_PROPERTY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SENSITIVE_PROPERTY = /(password|passphrase|secret|token|credential|connection|uri|url|host)/i;

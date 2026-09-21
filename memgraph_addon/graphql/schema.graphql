@@ -91,6 +91,25 @@ enum GraphNodeType {
   DASHBOARD_CARD
   SEMANTIC_TYPE
   VALIDATION_FINDING
+  # ON-010: per-entity semantic classification asset nodes
+  # (custom_components/ontology/semantic_classifier.py `<entity_id>::<Label>`
+  # nodes). Previously unmapped, so every classified entity's asset node fell
+  # back to OTHER in the Explorer even though the classifier tags exactly
+  # these 8 labels (const.py LABEL_* constants).
+  BATTERY_POWERED_DEVICE
+  ENERGY_ASSET
+  OCCUPANCY_SENSOR
+  CLIMATE_DEVICE
+  NETWORK_DEVICE
+  SECURITY_DEVICE
+  VEHICLE
+  GAS_CYLINDER
+  # ON-011: entities tied to Alex's Reolink cameras/NVR, matched by device
+  # manufacturer rather than domain/device_class/keyword (see
+  # semantic_classifier.py's `manufacturers` rule field). Replaces the
+  # misleading VEHICLE tag Reolink's AI "vehicle detected" binary_sensors
+  # used to get.
+  CAMERA
   OTHER
 }
 

@@ -1,4 +1,4 @@
-import { resolveOntologyIcon } from "./ontology-icons.js?v=4.0.0b33";
+import { resolveOntologyIcon, nodeAttention } from "./ontology-icons.js?v=4.1.0";
 
 export const UNASSIGNED_ID = "presentation:unassigned";
 export const SYNTHETIC_HOME_ID = "presentation:home";
@@ -11,6 +11,16 @@ const NODE_COLORS = Object.freeze({
   SCENE: "#6b4fa0", SCRIPT: "#4a7050", DASHBOARD: "#236779",
   SEMANTIC_TYPE: "#9b6500", VALIDATION_FINDING: "#9e2f2a",
   PRESENTATION_GROUP: "#8899aa",
+  // ON-010: per-entity semantic classification asset nodes - previously
+  // absent, so all fell back to the generic "#718087" unknown-type gray in
+  // the 3D graph, indistinguishable from each other and from truly unknown
+  // future node types.
+  BATTERY_POWERED_DEVICE: "#4c8c2b", ENERGY_ASSET: "#d4a017",
+  OCCUPANCY_SENSOR: "#2f8f8f", CLIMATE_DEVICE: "#c0533e",
+  NETWORK_DEVICE: "#3f51b5", SECURITY_DEVICE: "#8e2438",
+  VEHICLE: "#5d4037", GAS_CYLINDER: "#a1665e",
+  // ON-011: Reolink camera/NVR asset nodes.
+  CAMERA: "#00838f",
 });
 
 // nodeVal drives sphere volume; radius = ∛(val × nodeRelSize), default nodeRelSize = 4
@@ -18,6 +28,11 @@ const NODE_VALS = Object.freeze({
   HOME: 20, FLOOR: 10, AREA: 8, DEVICE: 3, ENTITY: 2,
   AUTOMATION: 3, SCENE: 3, SCRIPT: 3, DASHBOARD: 3,
   VALIDATION_FINDING: 4, PRESENTATION_GROUP: 5,
+  // ON-010: sized like ENTITY - these annotate one entity each, same as an
+  // entity node, not a bigger structural grouping.
+  BATTERY_POWERED_DEVICE: 2, ENERGY_ASSET: 2, OCCUPANCY_SENSOR: 2,
+  CLIMATE_DEVICE: 2, NETWORK_DEVICE: 2, SECURITY_DEVICE: 2,
+  VEHICLE: 2, GAS_CYLINDER: 2, CAMERA: 2,
 });
 
 // ─── Vendor library loader ───────────────────────────────────────────────────
@@ -51,6 +66,9 @@ function _injectScript(src) {
 function _nodeColor(node) {
   if (node._selected) return "#ffffff";
   if (node.findingSeverity === "CRITICAL" || node.findingSeverity === "ERROR") return "#9e2f2a";
+  // ON-012: unavailable/low-battery nodes are highlighted red in the 3D view,
+  // same red as a CRITICAL/ERROR validation finding.
+  if (nodeAttention(node)) return "#9e2f2a";
   return NODE_COLORS[node.type] ?? "#718087";
 }
 
