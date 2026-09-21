@@ -399,7 +399,21 @@ class OntologyOptionsFlow(OptionsFlow):
                 await self.hass.config_entries.async_reload(
                     self.config_entry.entry_id
                 )
-                return self.async_create_entry(title="", data={})
+                # ON-007: must NOT return async_create_entry() here. When an
+                # OptionsFlow step returns CREATE_ENTRY, HA's own
+                # OptionsFlowManager unconditionally does its own
+                # `async_update_entry(entry, options=result["data"])`
+                # afterwards - with `data={}` that immediately clobbered the
+                # real options we just persisted above back to an empty
+                # dict, and (since an update listener is registered in
+                # __init__.py) fired a *second*, redundant reload racing
+                # the one above. That race is the most likely source of the
+                # intermittent "Cannot resolve conflicting transactions"
+                # errors seen in the field. async_abort() completes the
+                # flow (HA shows "Successfully reconfigured") without
+                # triggering that automatic post-processing, since we
+                # already persisted data+options and reloaded ourselves.
+                return self.async_abort(reason="reconfigure_successful")
         return self.async_show_form(
             step_id="init",
             data_schema=_options_schema(user_input or current),

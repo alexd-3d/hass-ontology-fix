@@ -484,14 +484,30 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         self, entities: dict[str, graph_builder.EntitySyncContext | None]
     ) -> dict[str, Exception | None]:
         """Sync a batch of entities in one pass, refreshing node/relationship
-        counts once for the whole batch instead of once per entity (ON-002).
+        counts once for the whole batch instead of once per entity (ON-002) -
+        and, since ON-007, only when the batch could actually have changed
+        those counts.
 
-        `_refresh_counts()` runs two full-graph Cypher scans; calling it once
-        per debounced entity was the dominant amplifier of the sync-overload
-        bug. Each entity's own graph write is still isolated in its own
-        try/except so one bad entity can't abort the rest of the batch -
-        failures are reported per-entity via the returned map, mirroring
-        `_execute_entity_sync`'s single-entity error handling.
+        `_refresh_counts()` runs two full-graph Cypher scans (`MATCH (n)
+        RETURN count(n)` / `MATCH ()-[r]->() RETURN count(r)`). A plain
+        value/attribute update on an Entity node that already exists cannot
+        change either count - `update_entity`'s MERGE calls for the
+        Domain/Device relationships are idempotent no-ops once those edges
+        exist, and `async_reconcile_energy_roles` classifies purely from
+        static device_class/name signals, never from the live value - so the
+        only way this batch's writes can move the counts is the entity-gone
+        branch in `update_entity` (`_delete_node`, the "deleted mid-flight"
+        edge case). Rescanning the whole graph on every batch regardless was
+        the dominant remaining CPU cost after ON-002's debounce/batching:
+        confirmed live (2026-09-21) by disabling the integration entirely -
+        Memgraph CPU dropped from a sustained ~23% to ~0% and host load from
+        ~0.7 back to the pre-ontology ~0.15-0.20 baseline, with the fast
+        power/energy sensors never going idle long enough for a batch to
+        contain zero pending entities. Each entity's own graph write is
+        still isolated in its own try/except so one bad entity can't abort
+        the rest of the batch - failures are reported per-entity via the
+        returned map, mirroring `_execute_entity_sync`'s single-entity error
+        handling.
         """
         results: dict[str, Exception | None] = {}
         for entity_id, context in entities.items():
@@ -513,23 +529,31 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
                 self._record_failure(next(iter(results.values())))
             return results
 
-        try:
-            await self._refresh_counts()
-        except Exception as err:  # noqa: BLE001
-            # The per-entity writes above still succeeded; only the shared
-            # counts refresh failed. Surface it against each entity that
-            # otherwise succeeded rather than silently dropping it - retry
-            # will just re-run the (cheap) counts refresh.
-            self._record_failure(err)
-            for entity_id in succeeded:
-                results[entity_id] = err
-            return results
+        registry = er.async_get(self.hass)
+        removed = {
+            entity_id
+            for entity_id in succeeded
+            if registry.entities.get(entity_id) is None
+            and self.hass.states.get(entity_id) is None
+        }
+
+        if removed:
+            try:
+                await self._refresh_counts()
+            except Exception as err:  # noqa: BLE001
+                # The per-entity writes above still succeeded; only the
+                # shared counts refresh failed. Surface it against each
+                # entity that otherwise succeeded rather than silently
+                # dropping it - retry will just re-run the counts refresh.
+                self._record_failure(err)
+                for entity_id in succeeded:
+                    results[entity_id] = err
+                return results
 
         self._record_success()
-        registry = er.async_get(self.hass)
         for entity_id in succeeded:
             node_id = f"Entity:{entity_id}"
-            if registry.entities.get(entity_id) is None and self.hass.states.get(entity_id) is None:
+            if entity_id in removed:
                 self.change_buffer.publish_remove([node_id], [])
             else:
                 self.change_buffer.publish_upsert([node_id], [], ["state", "ha_id"])
