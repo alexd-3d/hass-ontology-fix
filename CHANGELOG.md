@@ -40,6 +40,16 @@ valid and are flagged for a routine resync via the existing
 
 ### Fixed
 
+- **Validation report inflated by two self-inflicted findings.** Every
+  validation finding's own internal graph relationship was written without
+  a `source` property, which the validator's own relationship-integrity
+  check then flagged as a defect on every run - accounting for the large
+  majority of all reported errors. Separately, the duplicate-entity check
+  compared entities by display name only, without regard to domain, so a
+  single physical device exposing two entities under one friendly name
+  (e.g. a dimmer's `switch` and `light` entities) was reported as a naming
+  collision. Both are fixed; only genuine naming collisions and real graph
+  defects are now reported.
 - **Sync overload under fast-changing sensors.** State-change-triggered graph
   synchronization was debounced per entity rather than in aggregate: a house
   with several sensors updating every 1-3 seconds produced near-continuous
