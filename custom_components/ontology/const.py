@@ -60,7 +60,15 @@ MAX_RELATIONSHIP_RESULT_LIMIT = 1000
 # Ontology schema version (Constitution Principle VI). Bump whenever labels,
 # relationship types, required properties, or graph semantics change.
 SCHEMA_VERSION = "3.1.0"
-SCHEMA_PREVIOUS_VERSION = "2.0.0"
+# The exact predecessor `migrate_schema_if_supported` (schema_migrations.py)
+# will auto-migrate in place on setup. Must always be the version the live
+# graph actually carries at the time SCHEMA_VERSION is bumped - forgetting to
+# advance this alongside SCHEMA_VERSION turns the mismatch check into a hard
+# ConfigEntryNotReady setup failure instead of a transparent migration
+# (confirmed live 2026-09-22: bumping to 3.1.0 without also moving this to
+# 3.0.0 blocked integration setup entirely, since the graph was on 3.0.0, not
+# the stale "2.0.0" this was still pointing at).
+SCHEMA_PREVIOUS_VERSION = "3.0.0"
 SCHEMA_SINGLETON_ID = "home_assistant_ontology"
 HOME_SINGLETON_ID = "home"
 
