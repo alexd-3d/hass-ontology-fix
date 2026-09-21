@@ -486,38 +486,56 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         """Sync a batch of entities in one pass, refreshing node/relationship
         counts once for the whole batch instead of once per entity (ON-002) -
         and, since ON-007, only when the batch could actually have changed
-        those counts.
+        those counts. Since ON-008, the energy-role binding repair follows
+        the same once-per-batch, gated-on-need shape.
 
         `_refresh_counts()` runs two full-graph Cypher scans (`MATCH (n)
         RETURN count(n)` / `MATCH ()-[r]->() RETURN count(r)`). A plain
         value/attribute update on an Entity node that already exists cannot
         change either count - `update_entity`'s MERGE calls for the
         Domain/Device relationships are idempotent no-ops once those edges
-        exist, and `async_reconcile_energy_roles` classifies purely from
-        static device_class/name signals, never from the live value - so the
-        only way this batch's writes can move the counts is the entity-gone
-        branch in `update_entity` (`_delete_node`, the "deleted mid-flight"
-        edge case). Rescanning the whole graph on every batch regardless was
-        the dominant remaining CPU cost after ON-002's debounce/batching:
-        confirmed live (2026-09-21) by disabling the integration entirely -
-        Memgraph CPU dropped from a sustained ~23% to ~0% and host load from
-        ~0.7 back to the pre-ontology ~0.15-0.20 baseline, with the fast
-        power/energy sensors never going idle long enough for a batch to
-        contain zero pending entities. Each entity's own graph write is
-        still isolated in its own try/except so one bad entity can't abort
-        the rest of the batch - failures are reported per-entity via the
-        returned map, mirroring `_execute_entity_sync`'s single-entity error
-        handling.
+        exist - so the only way this batch's writes can move the counts is
+        the entity-gone branch in `update_entity` (`_delete_node`, the
+        "deleted mid-flight" edge case). Rescanning the whole graph on every
+        batch regardless was the dominant remaining CPU cost after ON-002's
+        debounce/batching: confirmed live (2026-09-21) by disabling the
+        integration entirely - Memgraph CPU dropped from a sustained ~23% to
+        ~0% and host load from ~0.7 back to the pre-ontology ~0.15-0.20
+        baseline, with the fast power/energy sensors never going idle long
+        enough for a batch to contain zero pending entities.
+
+        `user_knowledge.async_repair_energy_role_bindings()` is a second,
+        similarly unconditional, full-graph-scope operation - it rebuilds
+        *every* EnergyRoleAssignment's binding, not just this batch's
+        entities. `async_reconcile_energy_roles()` used to call it once per
+        entity in this loop (via `async_reconcile_energy_role_for_entity`,
+        which only touches the one entity's own assignment, plus the shared
+        repair this method now gates separately - ON-008, found while
+        investigating why host load stayed above the zero-traffic A/B
+        baseline even after ON-007). It only needs to run when this batch
+        could plausibly have left a binding stale: an entity gained/kept an
+        inferred role (its own binding is already fresh from the upsert
+        itself, but another assignment's binding could reference an Entity
+        node that got deleted/recreated elsewhere in the same batch) or an
+        entity was removed outright (same `removed` set used for the counts
+        refresh above).
+
+        Each entity's own graph write is still isolated in its own
+        try/except so one bad entity can't abort the rest of the batch -
+        failures are reported per-entity via the returned map, mirroring
+        `_execute_entity_sync`'s single-entity error handling.
         """
         results: dict[str, Exception | None] = {}
+        any_role_assigned = False
         for entity_id, context in entities.items():
             try:
                 await graph_builder.update_entity(
                     self.hass, self.memgraph_client, entity_id, context
                 )
-                await user_knowledge.async_reconcile_energy_roles(
+                if await user_knowledge.async_reconcile_energy_role_for_entity(
                     self.hass, self.memgraph_client, entity_id
-                )
+                ):
+                    any_role_assigned = True
             except Exception as err:  # noqa: BLE001
                 results[entity_id] = err
             else:
@@ -545,6 +563,21 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
                 # shared counts refresh failed. Surface it against each
                 # entity that otherwise succeeded rather than silently
                 # dropping it - retry will just re-run the counts refresh.
+                self._record_failure(err)
+                for entity_id in succeeded:
+                    results[entity_id] = err
+                return results
+
+        if any_role_assigned or removed:
+            try:
+                await user_knowledge.async_repair_energy_role_bindings(
+                    self.memgraph_client
+                )
+            except Exception as err:  # noqa: BLE001
+                # Same reasoning as the counts-refresh failure above: the
+                # per-entity writes (including each entity's own role
+                # upsert/removal) already succeeded, only the shared
+                # binding repair failed - surface it so a retry re-runs it.
                 self._record_failure(err)
                 for entity_id in succeeded:
                     results[entity_id] = err

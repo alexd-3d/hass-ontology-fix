@@ -185,12 +185,58 @@ async def async_repair_energy_role_bindings(client: MemgraphClient) -> None:
     )
 
 
+async def async_reconcile_energy_role_for_entity(
+    hass: HomeAssistant, client: MemgraphClient, entity_id: str
+) -> bool:
+    """Refresh one entity's inferred energy-role assignment (ON-008).
+
+    Extracted out of `async_reconcile_energy_roles` so a batch sync (many
+    entities per coordinator pass) can call the cheap per-entity step in a
+    loop without also re-running `async_repair_energy_role_bindings` - an
+    unconditional, unfiltered `MATCH` over *every* `EnergyRoleAssignment`
+    node in the graph - once per entity. Only `infer_energy_role` (a static
+    device_class/name check) and a single idempotent MERGE/DETACH DELETE
+    happen here; the caller decides how often the shared repair actually
+    needs to run.
+
+    Returns True when this entity currently resolves to an inferred energy
+    role (i.e. an assignment was just upserted) - the signal a batch caller
+    uses to decide whether a binding repair pass is worth running afterwards
+    (an assignment's own binding is already kept fresh by the upsert here;
+    the repair exists to fix *other* assignments' bindings, e.g. after an
+    Entity node was deleted and recreated elsewhere in the same batch).
+    """
+    role = infer_energy_role(hass, entity_id)
+    if role is None:
+        await client.run_query(
+            f"MATCH (assignment:{LABEL_ENERGY_ROLE_ASSIGNMENT} "
+            "{ha_id: $assignment_id, source: $source}) "
+            "DETACH DELETE assignment",
+            {
+                "assignment_id": energy_role_assignment_id(SOURCE_INFERRED, entity_id),
+                "source": SOURCE_INFERRED,
+            },
+        )
+        return False
+    await _upsert_inferred_energy_role(client, entity_id, role)
+    return True
+
+
 async def async_reconcile_energy_roles(
     hass: HomeAssistant,
     client: MemgraphClient,
     entity_id: str | None = None,
 ) -> int:
-    """Refresh inferred statements and repair all effective-role bindings."""
+    """Refresh inferred statements and repair all effective-role bindings.
+
+    Always runs the full-graph binding repair exactly once per call,
+    regardless of how many entities are reconciled - correct and cheap for
+    the full-resync/rebuild and single-entity-service callers, which each
+    invoke this once. A batch-sync caller with many entities per call
+    should use `async_reconcile_energy_role_for_entity` directly instead
+    and gate its own, single, once-per-batch repair call (ON-008) - see
+    `coordinator._execute_entity_sync_batch`.
+    """
     if entity_id is None:
         entity_ids = sorted(state.entity_id for state in hass.states.async_all())
     else:
@@ -198,22 +244,8 @@ async def async_reconcile_energy_roles(
 
     inferred_count = 0
     for candidate_id in entity_ids:
-        role = infer_energy_role(hass, candidate_id)
-        if role is None:
-            await client.run_query(
-                f"MATCH (assignment:{LABEL_ENERGY_ROLE_ASSIGNMENT} "
-                "{ha_id: $assignment_id, source: $source}) "
-                "DETACH DELETE assignment",
-                {
-                    "assignment_id": energy_role_assignment_id(
-                        SOURCE_INFERRED, candidate_id
-                    ),
-                    "source": SOURCE_INFERRED,
-                },
-            )
-            continue
-        await _upsert_inferred_energy_role(client, candidate_id, role)
-        inferred_count += 1
+        if await async_reconcile_energy_role_for_entity(hass, client, candidate_id):
+            inferred_count += 1
 
     await async_repair_energy_role_bindings(client)
     return inferred_count
