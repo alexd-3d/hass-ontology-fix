@@ -74,14 +74,53 @@ async def test_detect_orphan_device_returns_devices_with_no_entities(
 async def test_detect_duplicate_entity_returns_all_ids_sharing_a_name(
     mock_memgraph_client,
 ) -> None:
+    """Two genuinely distinct entities (different object_ids) sharing a
+    display name are a real naming ambiguity - still flagged."""
     mock_memgraph_client.run_query.return_value = [
-        {"ha_id": "sensor.dup_1"},
-        {"ha_id": "sensor.dup_2"},
+        {"name": "Дзеркало", "ids": ["sensor.dup_1", "sensor.dup_2"]},
     ]
 
     result = await validation._detect_duplicate_entity(mock_memgraph_client)
 
     assert result == [("sensor.dup_1", LABEL_ENTITY), ("sensor.dup_2", LABEL_ENTITY)]
+
+
+async def test_detect_duplicate_entity_skips_same_object_id_domain_pair(
+    mock_memgraph_client,
+) -> None:
+    """ON-013 regression: a switch/light pair from one physical relay,
+    sharing an object_id and only differing by domain, is not a naming
+    collision - it's the expected shape of that hardware."""
+    mock_memgraph_client.run_query.return_value = [
+        {"name": "Дзеркало", "ids": ["switch.mirror_1", "light.mirror_1"]},
+    ]
+
+    result = await validation._detect_duplicate_entity(mock_memgraph_client)
+
+    assert result == []
+
+
+async def test_detect_duplicate_entity_flags_group_mixing_real_and_paired_ids(
+    mock_memgraph_client,
+) -> None:
+    """A group with more than one distinct object_id is still flagged in
+    full, even if one of those object_ids also has a switch/light pair
+    within the same group - the ambiguity is real once >1 object is
+    involved."""
+    mock_memgraph_client.run_query.return_value = [
+        {
+            "name": "Споти",
+            "ids": ["switch.hall_1", "light.hall_1", "switch.office_1"],
+        },
+    ]
+
+    result = await validation._detect_duplicate_entity(mock_memgraph_client)
+
+    assert result == [
+        ("switch.hall_1", LABEL_ENTITY),
+        ("light.hall_1", LABEL_ENTITY),
+        ("switch.office_1", LABEL_ENTITY),
+    ]
 
 
 async def test_detect_unavailable_critical_entity_only_flags_unavailable_state(
@@ -213,6 +252,11 @@ async def test_merge_finding_writes_expected_category_and_severity(
     assert params["category"] == FINDING_MISSING_AREA
     assert params["severity"] == SEVERITY_ERROR
     assert params["status"] == FINDING_STATUS_OPEN
+    # ON-013 regression: the RELATES_TO edge must get a `source` too, or
+    # `_detect_invalid_relationship` flags every finding's own edge as an
+    # "invalid relationship" on the very next validation run.
+    assert "MERGE (f)-[rel:" in query
+    assert "SET rel.source = $source" in query
 
 
 async def test_reconcile_category_resolves_findings_no_longer_detected(

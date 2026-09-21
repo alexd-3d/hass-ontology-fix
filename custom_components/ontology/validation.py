@@ -113,16 +113,34 @@ async def _detect_orphan_device(client: MemgraphClient) -> list[tuple[str, str]]
 
 
 async def _detect_duplicate_entity(client: MemgraphClient) -> list[tuple[str, str]]:
-    """Entity nodes sharing the same non-null `name` property."""
+    """Entity nodes sharing the same non-null `name` property.
+
+    ON-013: skips a group where every id shares the same object_id (the part
+    after the domain) and differs only by domain - e.g. `switch.foo` and
+    `light.foo`, the two entities one physical relay/dimmer legitimately
+    exposes under one friendly name. That pairing is expected, by design,
+    not a naming collision, and (confirmed live 2026-09-21) was the single
+    largest source of noise in this check - most of its ~157 flagged
+    entities were exactly this shape. A name shared across entities that
+    are *not* just a domain-pair of the same object (e.g. several distinct
+    physical lights genuinely named the same thing) is still flagged, since
+    that's a real, if lower-stakes, naming ambiguity worth a human look.
+    """
     query = (
         f"MATCH (e:{LABEL_ENTITY}) WHERE e.name IS NOT NULL "
         "WITH e.name AS name, collect(e.ha_id) AS ids "
         "WHERE size(ids) > 1 "
-        "UNWIND ids AS ha_id "
-        "RETURN ha_id"
+        "RETURN name, ids"
     )
     rows = await client.run_query(query, {})
-    return [(row["ha_id"], LABEL_ENTITY) for row in rows]
+    findings: list[tuple[str, str]] = []
+    for row in rows:
+        ids = row["ids"]
+        object_ids = {ha_id.split(".", 1)[1] for ha_id in ids if "." in ha_id}
+        if len(object_ids) <= 1:
+            continue
+        findings.extend((ha_id, LABEL_ENTITY) for ha_id in ids)
+    return findings
 
 
 async def _detect_unavailable_critical_entity(
@@ -194,6 +212,19 @@ async def _detect_missing_semantic_classification(
 async def _merge_finding(
     client: MemgraphClient, category: str, target_ha_id: str, target_label: str, severity: str
 ) -> str:
+    """Upsert one finding node and its RELATES_TO edge to its target.
+
+    ON-013: the RELATES_TO edge below used to be merged with no `source`
+    property at all - which `_detect_invalid_relationship` (a defensive
+    check for exactly that omission, see its docstring) then flagged on
+    *every single finding*, since it always matched. That one missing SET
+    was inflating every validation run with one bogus `invalid_relationship`
+    error per real finding (confirmed live 2026-09-21: 410/410 RELATES_TO
+    edges had a null source, accounting for 409 of the 439 "errors" in that
+    day's baseline). Stamping `rel.source` here, same as every other
+    relationship this integration writes, closes the gap at its source
+    instead of special-casing the detector to ignore its own findings.
+    """
     finding_ha_id = _finding_ha_id(category, target_ha_id)
     now = datetime.now(UTC).isoformat()
     query = (
@@ -203,7 +234,8 @@ async def _merge_finding(
         "f.last_detected_at = $now, f.resolved_at = null, f.source = $source, "
         "f.updated_at = $now "
         f"WITH f MATCH (target:{target_label} {{ha_id: $target_ha_id}}) "
-        f"MERGE (f)-[:{REL_RELATES_TO}]->(target)"
+        f"MERGE (f)-[rel:{REL_RELATES_TO}]->(target) "
+        "SET rel.source = $source"
     )
     await client.run_query(
         query,
