@@ -5,6 +5,18 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.1.1
+
+### Fixed
+
+- **Search matched only a whole literal phrase.** `ontology.search`'s `term`
+  compared the entire input as one literal substring against each name/ID,
+  so a natural multi-word query (e.g. "back motion") matched nothing unless
+  it appeared verbatim as a single substring somewhere. The term is now
+  split into words, each of which must match independently, so multi-word
+  queries work as expected. Matching itself is unchanged for single-word
+  terms and stays a literal, language-agnostic substring match.
+
 ## 4.1.0
 
 Forked from `hannovdm/hass-ontology` at `v4.0.0`. This is the fork's first
