@@ -554,18 +554,52 @@ async def active_consumers(
     )
 
 
+# ON-014: `search`'s max whitespace-separated tokens per call. Bounds the
+# number of Cypher parameters/OR-clauses a single search can generate so an
+# abusive/pathological term (e.g. a pasted sentence) can't blow up the query.
+_MAX_SEARCH_TOKENS = 8
+
+
 async def search(
     client: MemgraphClient, term: str, limit: int | None = None
 ) -> dict[str, Any]:
-    """Bounded name/identifier match across Area/Device/Entity (FR-001)."""
+    """Bounded name/identifier match across Area/Device/Entity (FR-001).
+
+    ON-014: `term` is split on whitespace into up to `_MAX_SEARCH_TOKENS`
+    tokens; a node must match every token (AND) to be returned, each via a
+    case-insensitive substring match against `name`/`ha_id`. This fixes
+    multi-word queries, which previously matched nothing unless the whole
+    term appeared verbatim as one substring.
+
+    `search` is a literal matcher against whatever language/vocabulary the
+    graph's own `name`/`ha_id` values use. Translating a query into that
+    vocabulary - a non-English term, an abbreviation, jargon - is the
+    caller's job, not this function's: a caller with language
+    understanding (an LLM-based agent, a conversation-agent intent
+    handler) is far better positioned to do that translation per-call than
+    a static in-repo mapping could ever be, and it keeps this service
+    itself simple, predictable, and free of any fixed vocabulary or
+    language assumption.
+    """
     effective_limit = _effective_limit(limit)
+    tokens = term.split()[:_MAX_SEARCH_TOKENS] or [term]
+
+    parameters: dict[str, Any] = {}
+    token_clauses: list[str] = []
+    for token_index, token in enumerate(tokens):
+        param_name = f"t{token_index}"
+        parameters[param_name] = token
+        token_clauses.append(
+            f"(toLower(coalesce(n.name, '')) CONTAINS toLower(${param_name}) "
+            f"OR toLower(n.ha_id) CONTAINS toLower(${param_name}))"
+        )
+
     query = (
         f"MATCH (n) WHERE (n:{LABEL_AREA} OR n:{LABEL_DEVICE} OR n:{LABEL_ENTITY}) "
-        "AND (toLower(coalesce(n.name, '')) CONTAINS toLower($term) "
-        "OR toLower(n.ha_id) CONTAINS toLower($term)) "
+        "AND (" + " AND ".join(token_clauses) + ") "
         "RETURN labels(n) AS labels, n AS node"
     )
-    rows, truncated = await client.run_query_limited(query, {"term": term}, effective_limit)
+    rows, truncated = await client.run_query_limited(query, parameters, effective_limit)
 
     matches: list[dict[str, Any]] = []
     for row in rows:
