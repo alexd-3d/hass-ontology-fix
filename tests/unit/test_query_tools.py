@@ -68,6 +68,38 @@ async def test_search_reports_truncated_as_a_warning() -> None:
     assert result["warnings"]
 
 
+async def test_search_single_word_term_produces_one_token() -> None:
+    """ON-014 regression: a plain single-word term still produces exactly
+    one parameter/clause - the pre-ON-014 case must not change shape."""
+    client = _client_with_rows([])
+    await query_tools.search(client, "kitchen")
+    query, parameters, _ = client.run_query_limited.await_args.args
+    assert parameters == {"t0": "kitchen"}
+    assert query.count(" AND ") == 1  # only the label-guard AND, no second token
+
+
+async def test_search_multi_word_term_requires_every_token_and() -> None:
+    """ON-014: 'back motion' must require BOTH tokens (AND), not match on
+    either alone - this is what fixes natural multi-word queries that
+    previously always returned zero results as one literal substring."""
+    client = _client_with_rows([])
+    await query_tools.search(client, "back motion")
+    query, parameters, _ = client.run_query_limited.await_args.args
+    assert parameters == {"t0": "back", "t1": "motion"}
+    assert query.count(" AND ") == 2  # label-guard AND + the two tokens ANDed together
+
+
+async def test_search_caps_token_count() -> None:
+    """ON-014: a pathologically long term is capped at _MAX_SEARCH_TOKENS
+    tokens so a single search call can't generate unbounded Cypher
+    parameters/OR-clauses."""
+    client = _client_with_rows([])
+    long_term = " ".join(f"word{i}" for i in range(20))
+    await query_tools.search(client, long_term)
+    _, parameters, _ = client.run_query_limited.await_args.args
+    assert len(parameters) == query_tools._MAX_SEARCH_TOKENS
+
+
 async def test_unassigned_area_items_returns_devices_and_effectively_unassigned_sensors() -> None:
     rows = [
         {"item_type": "device", "ha_id": "device-1", "name": "Portable sensor"},
