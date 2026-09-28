@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import mcp_server
 from .const import (
     BUTTON_KEY_REGENERATE_MCP_TOKEN,
+    BUTTON_KEY_SCAN_ZIGBEE_MESH,
     BUTTON_KEY_SYNC_SPATIAL_LAYOUT,
     CONF_MCP_ENABLED,
     DEFAULT_MCP_ENABLED,
@@ -61,6 +62,11 @@ BUTTON_DESCRIPTIONS: tuple[OntologyButtonEntityDescription, ...] = (
         key=BUTTON_KEY_SYNC_SPATIAL_LAYOUT,
         translation_key="ontology_sync_spatial_layout",
         press_fn=lambda coordinator: coordinator.async_sync_spatial_layout(),
+    ),
+    OntologyButtonEntityDescription(
+        key=BUTTON_KEY_SCAN_ZIGBEE_MESH,
+        translation_key="ontology_scan_zigbee_mesh",
+        press_fn=lambda coordinator: coordinator.async_scan_zigbee_mesh(),
     ),
 )
 

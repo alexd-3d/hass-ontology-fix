@@ -99,9 +99,11 @@ In ontology terms, Home Assistant becomes a **home digital twin**, where Areas, 
   `ontology.entity_context`, `ontology.automation_dependencies`,
   `ontology.impact_analysis`, `ontology.export_context`,
   `ontology.sync_spatial_layout` (optional — requires the ha-spatial-context
+  integration), `ontology.scan_zigbee_mesh` (optional — requires the `mqtt`
   integration).
 - **Sensors** for sync health, node/relationship counts, last sync time,
-  last error, schema version, and spatial layout sync duration.
+  last error, schema version, spatial layout sync duration, and Zigbee mesh
+  scan duration.
 - **Diagnostics** with connection status, element counts, semantic
   classification counts, open validation finding counts, and schema version
   — credentials and secrets are always redacted.

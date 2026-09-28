@@ -26,7 +26,7 @@ from homeassistant.core import (
 from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.loader import async_get_integration
 
@@ -65,6 +65,7 @@ from .const import (
     CONF_LOW_BATTERY_THRESHOLD,
     CONF_MAX_MEASUREMENT_AGE_HOURS,
     CONF_MCP_ENABLED,
+    CONF_MESH_SNAPSHOT_SCAN_HOUR,
     CONF_PASSWORD,
     CONF_PORT,
     CONF_RELATIONSHIP_RESULT_LIMIT,
@@ -74,6 +75,7 @@ from .const import (
     DEFAULT_LOW_BATTERY_THRESHOLD,
     DEFAULT_MAX_MEASUREMENT_AGE_HOURS,
     DEFAULT_MCP_ENABLED,
+    DEFAULT_MESH_SNAPSHOT_SCAN_HOUR,
     DEFAULT_RELATIONSHIP_RESULT_LIMIT,
     DOMAIN,
     ENERGY_ROLES,
@@ -106,6 +108,7 @@ from .const import (
     SERVICE_REBUILD,
     SERVICE_REFRESH_SEMANTICS,
     SERVICE_RESYNC,
+    SERVICE_SCAN_ZIGBEE_MESH,
     SERVICE_SEARCH,
     SERVICE_SET_ENERGY_ROLE,
     SERVICE_SYNC_ENTITY,
@@ -338,6 +341,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: OntologyConfigEntry) -> 
         )
     )
 
+    # ON-016: nightly Zigbee mesh scan, unless disabled (scan hour cleared in
+    # options). A no-op either way if mqtt isn't set up.
+    scan_hour = _parse_mesh_scan_hour(
+        entry.options.get(CONF_MESH_SNAPSHOT_SCAN_HOUR, DEFAULT_MESH_SNAPSHOT_SCAN_HOUR)
+    )
+    if scan_hour is not None:
+
+        @callback
+        def _async_nightly_mesh_scan(_now: datetime) -> None:
+            hass.async_create_task(
+                coordinator.async_scan_zigbee_mesh(),
+                name=f"ontology_mesh_scan_{entry.entry_id}",
+            )
+
+        entry.async_on_unload(
+            async_track_time_change(
+                hass, _async_nightly_mesh_scan, hour=scan_hour, minute=0, second=0
+            )
+        )
+
     _async_register_services(hass)
     websocket_api.async_register_commands(hass)
     intent_handlers.async_register_intents(hass)
@@ -419,6 +442,22 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
     hass.data[f"{DOMAIN}_panel_registered"] = True
 
 
+def _parse_mesh_scan_hour(raw: str) -> int | None:
+    """Empty disables the nightly scan; an out-of-range/non-numeric value
+    also disables it (logged) rather than failing setup (ON-016)."""
+    if not raw.strip():
+        return None
+    try:
+        hour = int(raw)
+    except ValueError:
+        _LOGGER.warning("Invalid mesh_snapshot_scan_hour %r; nightly scan disabled", raw)
+        return None
+    if not 0 <= hour <= 23:
+        _LOGGER.warning("mesh_snapshot_scan_hour %r out of range 0-23; nightly scan disabled", raw)
+        return None
+    return hour
+
+
 def _loaded_coordinators(hass: HomeAssistant) -> list[OntologyCoordinator]:
     """Return coordinators for all currently-loaded Ontology config entries."""
     return [
@@ -467,6 +506,15 @@ async def _async_handle_sync_spatial_layout(call: ServiceCall) -> None:
     """
     for coordinator in _loaded_coordinators(call.hass):
         await coordinator.async_sync_spatial_layout()
+
+
+async def _async_handle_scan_zigbee_mesh(call: ServiceCall) -> None:
+    """Handle the `ontology.scan_zigbee_mesh` service call (ON-016).
+
+    A no-op if the mqtt integration isn't set up.
+    """
+    for coordinator in _loaded_coordinators(call.hass):
+        await coordinator.async_scan_zigbee_mesh()
 
 
 async def _async_handle_query(call: ServiceCall) -> ServiceResponse:
@@ -696,6 +744,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_SYNC_SPATIAL_LAYOUT, _async_handle_sync_spatial_layout
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_SCAN_ZIGBEE_MESH, _async_handle_scan_zigbee_mesh
+    )
+    hass.services.async_register(
         DOMAIN,
         SERVICE_QUERY,
         _async_handle_query,
@@ -807,6 +858,7 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_VALIDATE,
         SERVICE_REFRESH_SEMANTICS,
         SERVICE_SYNC_SPATIAL_LAYOUT,
+        SERVICE_SCAN_ZIGBEE_MESH,
         SERVICE_QUERY,
         SERVICE_EXPORT_OVERRIDES,
         SERVICE_IMPORT_OVERRIDES,

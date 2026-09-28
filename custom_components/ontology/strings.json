@@ -72,13 +72,15 @@
       "ontology_last_error": { "name": "Last error" },
       "ontology_schema_version": { "name": "Schema version" },
       "ontology_sync_activity": { "name": "Sync activity" },
-      "ontology_spatial_sync_duration": { "name": "Spatial sync duration" }
+      "ontology_spatial_sync_duration": { "name": "Spatial sync duration" },
+      "ontology_mesh_scan_duration": { "name": "Mesh scan duration" }
     },
     "button": {
       "ontology_rebuild": { "name": "Rebuild" },
       "ontology_validate": { "name": "Validate" },
       "ontology_resync": { "name": "Resync" },
       "ontology_sync_spatial_layout": { "name": "Resync spatial layout" },
+      "ontology_scan_zigbee_mesh": { "name": "Scan Zigbee mesh" },
       "ontology_regenerate_mcp_token": { "name": "Regenerate MCP token" }
     }
   },
@@ -135,7 +137,11 @@
     },
     "sync_spatial_layout": {
       "name": "Resync spatial layout",
-      "description": "Pulls the current floor plan (rooms, walls, device pins) from the optional spatial_context integration and merges it into the graph. A no-op if spatial_context isn't installed."
+      "description": "Pulls the current floor plan (walls, device pin coordinates) from the optional spatial_context integration and merges it into the graph. A no-op if spatial_context isn't installed."
+    },
+    "scan_zigbee_mesh": {
+      "name": "Scan Zigbee mesh",
+      "description": "Scans the live Zigbee mesh via Zigbee2MQTT and records a snapshot in the graph. Also runs automatically once a night. A no-op if mqtt isn't set up."
     },
     "export_overrides": {
       "name": "Export overrides",
@@ -282,7 +288,11 @@
           "relationship_result_limit": "Maximum relationship results",
           "state_change_debounce_seconds": "State-change sync debounce (seconds)",
           "excluded_domains": "Domains excluded from state-change sync (comma-separated)",
-          "excluded_entities": "Entities excluded from state-change sync (comma-separated entity_ids)"
+          "excluded_entities": "Entities excluded from state-change sync (comma-separated entity_ids)",
+          "zigbee2mqtt_base_topic": "Zigbee2MQTT base topic",
+          "mesh_snapshot_retention_days": "Mesh snapshot retention (days)",
+          "mesh_snapshot_scan_hour": "Nightly mesh scan hour, 0-23 (empty disables the nightly scan)",
+          "mesh_snapshot_response_timeout_seconds": "Mesh scan response timeout (seconds)"
         }
       }
     }

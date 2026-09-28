@@ -31,6 +31,7 @@ refresh_semantics:
       selector:
         entity: {}
 sync_spatial_layout: {}
+scan_zigbee_mesh: {}
 export_overrides: {}
 import_overrides:
   fields:

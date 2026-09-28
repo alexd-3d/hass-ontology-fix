@@ -5,6 +5,24 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.3.0
+
+Ontology schema version: `3.2.0` → `3.3.0` (additive; existing graphs remain
+valid and are flagged for a routine resync via the existing
+`schema_version_mismatch` validation finding).
+
+### Added
+
+- **Nightly Zigbee mesh snapshot.** If the `mqtt` integration is set up,
+  a new "Scan Zigbee mesh" button (and matching `ontology.scan_zigbee_mesh`
+  service) records the current Zigbee mesh topology and link quality into
+  the graph, talking to Zigbee2MQTT directly over MQTT. Also runs
+  automatically once a night (configurable hour, or disable the nightly
+  run entirely and keep only the manual button/service). Each scan is kept
+  as its own snapshot so link-quality history stays queryable, pruned past
+  a configurable retention window (30 days by default).
+- `sensor.mesh_scan_duration` diagnostic sensor for the new scan.
+
 ## 4.2.0
 
 Ontology schema version: `3.1.0` → `3.2.0` (additive; existing graphs remain
