@@ -18,6 +18,14 @@ views:
             entity: button.resync
             features:
               - type: button
+          - type: tile
+            entity: button.resync_spatial_layout
+            features:
+              - type: button
+          - type: tile
+            entity: button.scan_zigbee_mesh
+            features:
+              - type: button
       - type: grid
         cards:
           - type: heading
@@ -95,3 +103,13 @@ views:
               rows: 1
           - type: tile
             entity: sensor.schema_version
+          - type: tile
+            entity: sensor.spatial_sync_duration
+            grid_options:
+              columns: 6
+              rows: 1
+          - type: tile
+            entity: sensor.mesh_scan_duration
+            grid_options:
+              columns: 6
+              rows: 1
