@@ -59,7 +59,7 @@ MAX_RELATIONSHIP_RESULT_LIMIT = 1000
 
 # Ontology schema version (Constitution Principle VI). Bump whenever labels,
 # relationship types, required properties, or graph semantics change.
-SCHEMA_VERSION = "3.2.0"
+SCHEMA_VERSION = "3.3.0"
 # The exact predecessor `migrate_schema_if_supported` (schema_migrations.py)
 # will auto-migrate in place on setup. Must always be the version the live
 # graph actually carries at the time SCHEMA_VERSION is bumped - forgetting to
@@ -68,7 +68,7 @@ SCHEMA_VERSION = "3.2.0"
 # (confirmed live 2026-09-22: bumping to 3.1.0 without also moving this to
 # 3.0.0 blocked integration setup entirely, since the graph was on 3.0.0, not
 # the stale "2.0.0" this was still pointing at).
-SCHEMA_PREVIOUS_VERSION = "3.1.0"
+SCHEMA_PREVIOUS_VERSION = "3.2.0"
 SCHEMA_SINGLETON_ID = "home_assistant_ontology"
 HOME_SINGLETON_ID = "home"
 
@@ -140,6 +140,9 @@ ATTR_ENTITY_ID = "entity_id"
 
 # ON-015: on-demand floor-plan sync from spatial_context.
 SERVICE_SYNC_SPATIAL_LAYOUT = "sync_spatial_layout"
+
+# ON-016: on-demand Zigbee mesh scan (also runs nightly on its own).
+SERVICE_SCAN_ZIGBEE_MESH = "scan_zigbee_mesh"
 
 # Services (contracts/services.md v2 additions)
 SERVICE_QUERY = "query"
@@ -276,6 +279,27 @@ INTERFLOOR_SLAB_ATTENUATION_DB: float | None = None  # not yet estimated
 SPATIAL_CONTEXT_DOMAIN = "spatial_context"
 SPATIAL_CONTEXT_GET_MAP_SERVICE = "get_map"
 
+# ON-016: nightly Zigbee mesh snapshot via direct MQTT (bypasses
+# spatial_context - see mesh_sync.py). Optional: check mqtt_available first.
+ZIGBEE2MQTT_NETWORKMAP_REQUEST_TOPIC_SUFFIX = "bridge/request/networkmap"
+ZIGBEE2MQTT_NETWORKMAP_RESPONSE_TOPIC_SUFFIX = "bridge/response/networkmap"
+CONF_ZIGBEE2MQTT_BASE_TOPIC = "zigbee2mqtt_base_topic"
+DEFAULT_ZIGBEE2MQTT_BASE_TOPIC = "zigbee2mqtt"
+CONF_MESH_SNAPSHOT_RETENTION_DAYS = "mesh_snapshot_retention_days"
+DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS = 30
+MIN_MESH_SNAPSHOT_RETENTION_DAYS = 1
+MAX_MESH_SNAPSHOT_RETENTION_DAYS = 365
+CONF_MESH_SNAPSHOT_SCAN_HOUR = "mesh_snapshot_scan_hour"
+# Local hour (0-23) the nightly scan runs at, stored as a string (like
+# CONF_EXCLUDED_DOMAINS) so it can be cleared to empty in the options form -
+# an empty value disables the nightly schedule entirely; the manual
+# button/service still work either way. Parsed in __init__.py.
+DEFAULT_MESH_SNAPSHOT_SCAN_HOUR = "3"
+CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS = "mesh_snapshot_response_timeout_seconds"
+DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS = 150.0  # scan takes 1-2 min
+MIN_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS = 10.0
+MAX_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS = 600.0
+
 # Node labels (data-model.md "Nodes")
 LABEL_HOME = "Home"
 LABEL_FLOOR = "Floor"
@@ -372,6 +396,12 @@ LABEL_VALIDATION_FINDING = "ValidationFinding"
 # plugin exposes no room boundary to derive it from.
 LABEL_WALL = "Wall"
 
+# ON-016: one MeshSnapshot per nightly Zigbee scan, linked to its MeshLink
+# edges - kept per-snapshot (not overwritten) so link-quality history stays
+# queryable. Pruned past CONF_MESH_SNAPSHOT_RETENTION_DAYS.
+LABEL_MESH_SNAPSHOT = "MeshSnapshot"
+LABEL_MESH_LINK = "MeshLink"
+
 # All semantic asset labels (1:1 with the classified Entity, data-model.md)
 SEMANTIC_TYPE_LABELS = (
     LABEL_GAS_CYLINDER,
@@ -392,6 +422,8 @@ REL_LOCATED_IN = "LOCATED_IN"
 # ON-015: exact x/y pin coordinates, Entity straight to Floor. Distinct from
 # REL_LOCATED_IN (SemanticType -> Area, a coarse category, not a coordinate).
 REL_PINNED_ON_FLOOR = "PINNED_ON_FLOOR"
+# ON-016: MeshSnapshot -> MeshLink.
+REL_HAS_LINK = "HAS_LINK"
 REL_OBSERVED_BY = "OBSERVED_BY"
 REL_CONTAINS_CARD = "CONTAINS_CARD"
 REL_DISPLAYS_ENTITY = "DISPLAYS_ENTITY"
@@ -562,4 +594,7 @@ BUTTON_KEY_REGENERATE_MCP_TOKEN = "regenerate_mcp_token"
 
 # ON-015: button.py control entity for on-demand spatial-layout sync.
 BUTTON_KEY_SYNC_SPATIAL_LAYOUT = "sync_spatial_layout"
+
+# ON-016: button.py control entity to run a mesh scan on demand.
+BUTTON_KEY_SCAN_ZIGBEE_MESH = "scan_zigbee_mesh"
 

@@ -25,11 +25,15 @@ from .const import (
     CONF_MAX_MEASUREMENT_AGE_HOURS,
     CONF_MCP_ALLOWED_NETWORKS,
     CONF_MCP_ENABLED,
+    CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    CONF_MESH_SNAPSHOT_RETENTION_DAYS,
+    CONF_MESH_SNAPSHOT_SCAN_HOUR,
     CONF_PASSWORD,
     CONF_PORT,
     CONF_RELATIONSHIP_RESULT_LIMIT,
     CONF_STATE_CHANGE_DEBOUNCE_SECONDS,
     CONF_USERNAME,
+    CONF_ZIGBEE2MQTT_BASE_TOPIC,
     DEFAULT_ACTIVE_POWER_THRESHOLD,
     DEFAULT_AUTO_CLASSIFY,
     DEFAULT_DATABASE,
@@ -42,12 +46,20 @@ from .const import (
     DEFAULT_MAX_MEASUREMENT_AGE_HOURS,
     DEFAULT_MCP_ALLOWED_NETWORKS,
     DEFAULT_MCP_ENABLED,
+    DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS,
+    DEFAULT_MESH_SNAPSHOT_SCAN_HOUR,
     DEFAULT_PORT,
     DEFAULT_RELATIONSHIP_RESULT_LIMIT,
     DEFAULT_STATE_CHANGE_DEBOUNCE_SECONDS,
+    DEFAULT_ZIGBEE2MQTT_BASE_TOPIC,
     DOMAIN,
+    MAX_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    MAX_MESH_SNAPSHOT_RETENTION_DAYS,
     MAX_RELATIONSHIP_RESULT_LIMIT,
     MAX_STATE_CHANGE_DEBOUNCE_SECONDS,
+    MIN_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    MIN_MESH_SNAPSHOT_RETENTION_DAYS,
     MIN_STATE_CHANGE_DEBOUNCE_SECONDS,
 )
 from .memgraph_client import CannotConnect, InvalidAuth, MemgraphClient
@@ -317,6 +329,45 @@ def _options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             default=defaults.get(CONF_EXCLUDED_ENTITIES, DEFAULT_EXCLUDED_ENTITIES),
         )
     ] = str
+    # ON-016: Zigbee mesh snapshot options.
+    schema_dict[
+        vol.Optional(
+            CONF_ZIGBEE2MQTT_BASE_TOPIC,
+            default=defaults.get(CONF_ZIGBEE2MQTT_BASE_TOPIC, DEFAULT_ZIGBEE2MQTT_BASE_TOPIC),
+        )
+    ] = str
+    schema_dict[
+        vol.Optional(
+            CONF_MESH_SNAPSHOT_RETENTION_DAYS,
+            default=defaults.get(
+                CONF_MESH_SNAPSHOT_RETENTION_DAYS, DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS
+            ),
+        )
+    ] = vol.All(
+        vol.Coerce(int),
+        vol.Range(min=MIN_MESH_SNAPSHOT_RETENTION_DAYS, max=MAX_MESH_SNAPSHOT_RETENTION_DAYS),
+    )
+    schema_dict[
+        vol.Optional(
+            CONF_MESH_SNAPSHOT_SCAN_HOUR,
+            default=defaults.get(CONF_MESH_SNAPSHOT_SCAN_HOUR, DEFAULT_MESH_SNAPSHOT_SCAN_HOUR),
+        )
+    ] = str
+    schema_dict[
+        vol.Optional(
+            CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+            default=defaults.get(
+                CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+                DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+            ),
+        )
+    ] = vol.All(
+        _FINITE_FLOAT,
+        vol.Range(
+            min=MIN_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+            max=MAX_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+        ),
+    )
     return vol.Schema(schema_dict)
 
 
@@ -345,6 +396,10 @@ class OntologyOptionsFlow(OptionsFlow):
                     CONF_STATE_CHANGE_DEBOUNCE_SECONDS,
                     CONF_EXCLUDED_DOMAINS,
                     CONF_EXCLUDED_ENTITIES,
+                    CONF_ZIGBEE2MQTT_BASE_TOPIC,
+                    CONF_MESH_SNAPSHOT_RETENTION_DAYS,
+                    CONF_MESH_SNAPSHOT_SCAN_HOUR,
+                    CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                 )
             }
             try:
@@ -393,6 +448,20 @@ class OntologyOptionsFlow(OptionsFlow):
                         ),
                         CONF_EXCLUDED_ENTITIES: user_input.get(
                             CONF_EXCLUDED_ENTITIES, DEFAULT_EXCLUDED_ENTITIES
+                        ),
+                        CONF_ZIGBEE2MQTT_BASE_TOPIC: user_input.get(
+                            CONF_ZIGBEE2MQTT_BASE_TOPIC, DEFAULT_ZIGBEE2MQTT_BASE_TOPIC
+                        ),
+                        CONF_MESH_SNAPSHOT_RETENTION_DAYS: user_input.get(
+                            CONF_MESH_SNAPSHOT_RETENTION_DAYS,
+                            DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS,
+                        ),
+                        CONF_MESH_SNAPSHOT_SCAN_HOUR: user_input.get(
+                            CONF_MESH_SNAPSHOT_SCAN_HOUR, DEFAULT_MESH_SNAPSHOT_SCAN_HOUR
+                        ),
+                        CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS: user_input.get(
+                            CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+                            DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                         ),
                     },
                 )

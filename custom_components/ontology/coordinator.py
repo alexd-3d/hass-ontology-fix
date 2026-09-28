@@ -30,6 +30,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from . import (
     graph_builder,
+    mesh_sync,
     overrides,
     query_service,
     semantic_classifier,
@@ -39,7 +40,13 @@ from . import (
 )
 from .const import (
     CONF_AUTO_CLASSIFY,
+    CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    CONF_MESH_SNAPSHOT_RETENTION_DAYS,
+    CONF_ZIGBEE2MQTT_BASE_TOPIC,
     DEFAULT_AUTO_CLASSIFY,
+    DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS,
+    DEFAULT_ZIGBEE2MQTT_BASE_TOPIC,
     DOMAIN,
     GRAPH_REVISION_BUFFER_SIZE,
     HEALTH_ERROR,
@@ -227,6 +234,9 @@ class OntologyState:
     spatial_sync_last_duration_ms: float | None = None
     spatial_sync_last_walls: int = 0
     spatial_sync_last_pinned_on_floor: int = 0
+    # ON-016: duration/result of the last Zigbee mesh scan (nightly or manual).
+    mesh_scan_last_duration_ms: float | None = None
+    mesh_scan_last_links: int = 0
 
 
 class OperationInProgress(Exception):
@@ -662,6 +672,42 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         """On-demand floor-plan sync from spatial_context (ON-015). No-op if
         spatial_context isn't installed."""
         return await self.async_run_operation(self._execute_sync_spatial_layout)
+
+    # -- Zigbee mesh scan (ON-016) -------------------------------------------
+
+    async def _execute_scan_zigbee_mesh(self) -> dict[str, int]:
+        start = time.monotonic()
+        options = self.entry.options
+        try:
+            result = await mesh_sync.async_scan_zigbee_mesh(
+                self.hass,
+                self.memgraph_client,
+                base_topic=options.get(
+                    CONF_ZIGBEE2MQTT_BASE_TOPIC, DEFAULT_ZIGBEE2MQTT_BASE_TOPIC
+                ),
+                retention_days=options.get(
+                    CONF_MESH_SNAPSHOT_RETENTION_DAYS, DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS
+                ),
+                response_timeout_seconds=options.get(
+                    CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+                    DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+                ),
+            )
+        except Exception as err:  # noqa: BLE001
+            self.state.mesh_scan_last_duration_ms = round((time.monotonic() - start) * 1000, 1)
+            self._record_failure(err)
+            raise
+        else:
+            self.state.mesh_scan_last_duration_ms = round((time.monotonic() - start) * 1000, 1)
+            self.state.mesh_scan_last_links = result["links"]
+            self._record_success()
+            await self._refresh_counts()
+            return result
+
+    async def async_scan_zigbee_mesh(self) -> dict[str, int]:
+        """Nightly (or manual) Zigbee mesh scan (ON-016). No-op if mqtt isn't
+        set up."""
+        return await self.async_run_operation(self._execute_scan_zigbee_mesh)
 
     # -- Semantic classification (User Story 1/6) ---------------------------
 

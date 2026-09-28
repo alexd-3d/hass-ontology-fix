@@ -6,19 +6,23 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from homeassistant.core import ServiceCall
 
 from custom_components.ontology import (
     _async_handle_rebuild,
     _async_handle_resync,
+    _async_handle_scan_zigbee_mesh,
     _async_handle_sync_entity,
     _async_handle_validate,
+    _parse_mesh_scan_hour,
 )
 from custom_components.ontology.const import (
     ATTR_ENTITY_ID,
     DOMAIN,
     SERVICE_REBUILD,
     SERVICE_RESYNC,
+    SERVICE_SCAN_ZIGBEE_MESH,
     SERVICE_SYNC_ENTITY,
     SERVICE_VALIDATE,
 )
@@ -67,6 +71,33 @@ async def test_validate_service_calls_async_validate(hass) -> None:
         await _async_handle_validate(call)
 
     coordinator.async_validate.assert_awaited_once()
+
+
+async def test_scan_zigbee_mesh_service_calls_async_scan_zigbee_mesh(hass) -> None:
+    coordinator = AsyncMock()
+    call = ServiceCall(hass, DOMAIN, SERVICE_SCAN_ZIGBEE_MESH, {})
+
+    with patch("custom_components.ontology._loaded_coordinators", return_value=[coordinator]):
+        await _async_handle_scan_zigbee_mesh(call)
+
+    coordinator.async_scan_zigbee_mesh.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("3", 3),
+        ("0", 0),
+        ("23", 23),
+        ("", None),
+        ("   ", None),
+        ("24", None),
+        ("-1", None),
+        ("not a number", None),
+    ],
+)
+def test_parse_mesh_scan_hour(raw: str, expected: int | None) -> None:
+    assert _parse_mesh_scan_hour(raw) == expected
 
 
 async def test_service_handler_is_noop_when_no_entries_loaded(hass) -> None:

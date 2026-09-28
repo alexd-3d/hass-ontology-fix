@@ -102,6 +102,15 @@ SENSOR_DESCRIPTIONS: tuple[OntologySensorEntityDescription, ...] = (
             "pinned_on_floor": state.spatial_sync_last_pinned_on_floor,
         },
     ),
+    # ON-016: unavailable until the first nightly or manual mesh scan.
+    OntologySensorEntityDescription(
+        key="mesh_scan_duration",
+        translation_key="ontology_mesh_scan_duration",
+        native_unit_of_measurement="ms",
+        state_class="measurement",
+        value_fn=lambda state: state.mesh_scan_last_duration_ms,
+        attrs_fn=lambda state: {"links": state.mesh_scan_last_links},
+    ),
 )
 
 
