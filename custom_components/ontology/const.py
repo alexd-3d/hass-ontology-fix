@@ -333,10 +333,9 @@ LABEL_OCCUPANCY_SENSOR = "OccupancySensor"
 LABEL_CLIMATE_DEVICE = "ClimateDevice"
 LABEL_NETWORK_DEVICE = "NetworkDevice"
 LABEL_BATTERY_POWERED_DEVICE = "BatteryPoweredDevice"
-# ON-011: matched by device manufacturer ("Reolink"), not domain/device_class/
-# keyword like the other semantic types - see semantic_classifier.py's
-# `manufacturers` rule field. Groups every entity tied to Alex's 3 Reolink
-# cameras + 1 NVR, replacing the misleading LABEL_VEHICLE tag their AI
+# ON-011: matched by device manufacturer ("Reolink"), not domain/device_class
+# keyword - see semantic_classifier.py's `manufacturers` rule field. Groups
+# camera/NVR entities, replacing the misleading LABEL_VEHICLE tag their AI
 # "vehicle detected" binary_sensors used to get.
 LABEL_CAMERA = "Camera"
 LABEL_DASHBOARD = "Dashboard"

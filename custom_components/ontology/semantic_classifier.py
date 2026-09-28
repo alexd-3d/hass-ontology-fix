@@ -148,9 +148,9 @@ RULES: tuple[ClassificationRule, ...] = (
         device_classes=("battery",),
         keywords=("battery",),
     ),
-    # ON-011: everything tied to Alex's Reolink cameras/NVR - motion sensors,
-    # AI detection binary_sensors, stream/snapshot entities, firmware sensors
-    # - regardless of domain or naming, matched purely by device manufacturer.
+    # ON-011: every Reolink camera/NVR entity - motion sensors, AI detection
+    # binary_sensors, stream/snapshot entities, firmware sensors - matched
+    # purely by device manufacturer, regardless of domain or naming.
     ClassificationRule(
         LABEL_CAMERA,
         REL_OBSERVED_BY,
