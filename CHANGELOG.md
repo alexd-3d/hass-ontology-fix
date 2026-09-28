@@ -5,6 +5,24 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.2.0
+
+Ontology schema version: `3.1.0` → `3.2.0` (additive; existing graphs remain
+valid and are flagged for a routine resync via the existing
+`schema_version_mismatch` validation finding).
+
+### Added
+
+- **Optional floor-plan integration with ha-spatial-context.** If the
+  optional `spatial_context` integration is installed, a new "Resync spatial
+  layout" button (and matching `ontology.sync_spatial_layout` service) pulls
+  wall material/thickness/attenuation and exact device pin coordinates from
+  its floor plan into the graph. Installs without spatial_context are
+  unaffected — the sync is a no-op.
+- `sensor.spatial_sync_duration` diagnostic sensor for the new sync.
+- Two new validation checks: a floor plan not yet mapped in spatial_context,
+  and an entity on a mapped floor that isn't pinned yet.
+
 ## 4.1.1
 
 ### Fixed

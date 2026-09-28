@@ -136,8 +136,7 @@ test("ON-010: semantic classification asset node labels resolve to their own Gra
   // creates one node per (entity, matched rule) carrying ONLY the rule's
   // label (e.g. "BatteryPoweredDevice") - never "Entity" - so before these
   // were added to NODE_TYPES every classified entity's asset node silently
-  // fell back to OTHER in the Explorer (reported by Alex: PIR-floor-2's
-  // battery/voltage/occupancy sub-entities all showing as "Other").
+  // fell back to OTHER in the Explorer.
   const cases = [
     ["BatteryPoweredDevice", "BATTERY_POWERED_DEVICE"],
     ["EnergyAsset", "ENERGY_ASSET"],

@@ -90,6 +90,18 @@ SENSOR_DESCRIPTIONS: tuple[OntologySensorEntityDescription, ...] = (
             "last_batch_duration_ms": state.sync_activity_last_batch_ms,
         },
     ),
+    # ON-015: unavailable until the spatial-layout button/service has run.
+    OntologySensorEntityDescription(
+        key="spatial_sync_duration",
+        translation_key="ontology_spatial_sync_duration",
+        native_unit_of_measurement="ms",
+        state_class="measurement",
+        value_fn=lambda state: state.spatial_sync_last_duration_ms,
+        attrs_fn=lambda state: {
+            "walls": state.spatial_sync_last_walls,
+            "pinned_on_floor": state.spatial_sync_last_pinned_on_floor,
+        },
+    ),
 )
 
 
