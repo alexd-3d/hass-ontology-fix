@@ -107,13 +107,20 @@ async def async_sync_spatial_layout(
                 continue
             # points_x/points_y: parallel flat float arrays, since Memgraph/
             # Neo4j properties can't be a nested list of [x, y] pairs.
+            material = wall.get("material")
+            thickness_cm = wall.get("thickness_cm")
             await merge_node(
                 client,
                 LABEL_WALL,
                 wall_id,
                 {
-                    "material": wall.get("material"),
-                    "thickness_cm": wall.get("thickness_cm"),
+                    # ON-018: human-readable name so the Explorer's search
+                    # (matches on `name`/`ha_id`) can actually find a wall.
+                    "name": f"{material} wall ({thickness_cm}cm)"
+                    if material
+                    else wall_id,
+                    "material": material,
+                    "thickness_cm": thickness_cm,
                     "attenuation_db": wall.get("attenuation_db"),
                     "points_x": [point[0] for point in points_m],
                     "points_y": [point[1] for point in points_m],

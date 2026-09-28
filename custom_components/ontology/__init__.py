@@ -50,6 +50,7 @@ from .const import (
     ATTR_EXPORT_TYPE,
     ATTR_LIMIT,
     ATTR_MAX_AGE_HOURS,
+    ATTR_MAX_LQI,
     ATTR_PARAMETERS,
     ATTR_PAYLOAD,
     ATTR_ROLE,
@@ -92,6 +93,7 @@ from .const import (
     RESULT_TYPE_IMPACT_ANALYSIS,
     RESULT_TYPE_LOW_BATTERY_AREAS,
     RESULT_TYPE_SEARCH,
+    RESULT_TYPE_WEAK_MESH_LINKS,
     SCHEMA_VERSION,
     SERVICE_ACTIVE_CONSUMERS,
     SERVICE_AREA_CONTEXT,
@@ -114,6 +116,7 @@ from .const import (
     SERVICE_SYNC_ENTITY,
     SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_VALIDATE,
+    SERVICE_WEAK_MESH_LINKS,
     SYNC_ACTIVITY_PUBLISH_INTERVAL_SECONDS,
 )
 from .coordinator import OntologyCoordinator
@@ -206,6 +209,14 @@ _ACTIVE_CONSUMERS_SCHEMA = vol.Schema(
         vol.Optional(ATTR_MAX_AGE_HOURS): vol.All(
             _FINITE_FLOAT, vol.Range(min=0, min_included=False)
         ),
+        vol.Optional(ATTR_LIMIT): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=1000)
+        ),
+    }
+)
+_WEAK_MESH_LINKS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_MAX_LQI): vol.All(_FINITE_FLOAT, vol.Range(min=0)),
         vol.Optional(ATTR_LIMIT): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=1000)
         ),
@@ -690,6 +701,29 @@ async def _async_handle_active_consumers(call: ServiceCall) -> ServiceResponse:
     )
 
 
+async def _async_handle_weak_mesh_links(call: ServiceCall) -> ServiceResponse:
+    """Handle the weakest-Zigbee-links-from-latest-snapshot response service (ON-018)."""
+    coordinators = _loaded_coordinators(call.hass)
+    if not coordinators:
+        return query_tools.build_tool_result(
+            "home",
+            RESULT_TYPE_WEAK_MESH_LINKS,
+            None,
+            ["ontology dependency unavailable"],
+            outcome="degraded",
+        )
+    coordinator = coordinators[0]
+    options = coordinator.entry.options
+    configured_limit = int(
+        options.get(CONF_RELATIONSHIP_RESULT_LIMIT, DEFAULT_RELATIONSHIP_RESULT_LIMIT)
+    )
+    return await query_tools.weak_mesh_links(
+        coordinator.memgraph_client,
+        max_lqi=call.data.get(ATTR_MAX_LQI, 50.0),
+        limit=min(call.data.get(ATTR_LIMIT, configured_limit), configured_limit),
+    )
+
+
 async def _async_handle_set_energy_role(call: ServiceCall) -> ServiceResponse:
     """Upsert a durable user energy role under coordinator serialization."""
     coordinators = _loaded_coordinators(call.hass)
@@ -829,6 +863,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=_ACTIVE_CONSUMERS_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_WEAK_MESH_LINKS,
+        _async_handle_weak_mesh_links,
+        schema=_WEAK_MESH_LINKS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
     async_register_admin_service(
         hass,
         DOMAIN,
@@ -871,6 +912,7 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_EXPORT_CONTEXT,
         SERVICE_LOW_BATTERY_AREAS,
         SERVICE_ACTIVE_CONSUMERS,
+        SERVICE_WEAK_MESH_LINKS,
         SERVICE_SET_ENERGY_ROLE,
         SERVICE_DELETE_ENERGY_ROLE,
     ):

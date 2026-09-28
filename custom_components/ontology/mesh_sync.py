@@ -108,7 +108,13 @@ async def async_scan_zigbee_mesh(
 
     now = datetime.now(UTC)
     snapshot_id = now.strftime("mesh-%Y%m%dT%H%M%SZ")
-    await merge_node(client, LABEL_MESH_SNAPSHOT, snapshot_id, {"scanned_at": now.isoformat()})
+    await merge_node(
+        client,
+        LABEL_MESH_SNAPSHOT,
+        snapshot_id,
+        # ON-018: human-readable name for the Explorer's search/display.
+        {"name": f"Mesh scan {now.strftime('%Y-%m-%d %H:%M')}", "scanned_at": now.isoformat()},
+    )
 
     link_count = 0
     for link in links:
@@ -122,6 +128,7 @@ async def async_scan_zigbee_mesh(
             LABEL_MESH_LINK,
             link_id,
             {
+                "name": f"{names.get(source, source)} → {names.get(target, target)}",
                 "from_device": source,
                 "from_name": names.get(source, source),
                 "to_device": target,

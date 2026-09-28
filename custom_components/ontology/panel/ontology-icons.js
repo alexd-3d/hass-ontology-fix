@@ -76,6 +76,10 @@ const TYPE_FALLBACKS = Object.freeze({
   GAS_CYLINDER: "mdi:propane-tank-outline",
   // ON-011: Reolink camera/NVR asset nodes (manufacturer-matched).
   CAMERA: "mdi:cctv",
+  // ON-018: spatial_context/Zigbee mesh nodes (ON-015/ON-016).
+  WALL: "mdi:wall",
+  MESH_SNAPSHOT: "mdi:access-point-network",
+  MESH_LINK: "mdi:transit-connection-variant",
   OTHER: "mdi:help-circle-outline",
 });
 

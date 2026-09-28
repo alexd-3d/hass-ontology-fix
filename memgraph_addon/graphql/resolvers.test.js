@@ -158,6 +158,21 @@ test("ON-010: semantic classification asset node labels resolve to their own Gra
   }
 });
 
+test("ON-018: spatial_context/Zigbee mesh node labels resolve to their own GraphNodeType, not OTHER", () => {
+  const cases = [
+    ["Wall", "WALL"],
+    ["MeshSnapshot", "MESH_SNAPSHOT"],
+    ["MeshLink", "MESH_LINK"],
+  ];
+  for (const [label, expectedType] of cases) {
+    const node = serializeGraphNode({
+      labels: [label],
+      properties: { ha_id: `${label.toLowerCase()}-example`, name: "Example" },
+    });
+    assert.equal(node.type, expectedType, `label ${label} should resolve to ${expectedType}`);
+  }
+});
+
 test("safe serialization produces stable IDs and bounded redacted properties", () => {
   const node = serializeGraphNode({
     labels: ["Entity"],
