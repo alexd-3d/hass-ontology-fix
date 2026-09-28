@@ -33,6 +33,7 @@ from . import (
     overrides,
     query_service,
     semantic_classifier,
+    spatial_sync,
     user_knowledge,
     validation,
 )
@@ -221,6 +222,11 @@ class OntologyState:
     sync_activity_events: int = 0
     sync_activity_avg_batch_size: float = 0.0
     sync_activity_last_batch_ms: float | None = None
+    # ON-015: duration/result of the last on-demand spatial layout sync.
+    # None until the button/service has run at least once.
+    spatial_sync_last_duration_ms: float | None = None
+    spatial_sync_last_walls: int = 0
+    spatial_sync_last_pinned_on_floor: int = 0
 
 
 class OperationInProgress(Exception):
@@ -627,6 +633,35 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         supersedes v1's connectivity-only check per contracts/services.md).
         """
         await self._run_serialized(self._execute_validate)
+
+    # -- Spatial layout sync (ON-015) ---------------------------------------
+
+    async def _execute_sync_spatial_layout(self) -> dict[str, int]:
+        start = time.monotonic()
+        try:
+            result = await spatial_sync.async_sync_spatial_layout(
+                self.hass, self.memgraph_client
+            )
+        except Exception as err:  # noqa: BLE001
+            self.state.spatial_sync_last_duration_ms = round(
+                (time.monotonic() - start) * 1000, 1
+            )
+            self._record_failure(err)
+            raise
+        else:
+            self.state.spatial_sync_last_duration_ms = round(
+                (time.monotonic() - start) * 1000, 1
+            )
+            self.state.spatial_sync_last_walls = result["walls"]
+            self.state.spatial_sync_last_pinned_on_floor = result["pinned_on_floor"]
+            self._record_success()
+            await self._refresh_counts()
+            return result
+
+    async def async_sync_spatial_layout(self) -> dict[str, int]:
+        """On-demand floor-plan sync from spatial_context (ON-015). No-op if
+        spatial_context isn't installed."""
+        return await self.async_run_operation(self._execute_sync_spatial_layout)
 
     # -- Semantic classification (User Story 1/6) ---------------------------
 

@@ -11,6 +11,8 @@ from homeassistant.helpers import entity_registry as er
 from custom_components.ontology import validation
 from custom_components.ontology.const import (
     FINDING_DUPLICATE_ENTITY,
+    FINDING_ENTITY_MISSING_FLOOR_PIN,
+    FINDING_FLOOR_MISSING_SPATIAL_COVERAGE,
     FINDING_INVALID_RELATIONSHIP,
     FINDING_MISSING_AREA,
     FINDING_MISSING_DEVICE,
@@ -23,6 +25,7 @@ from custom_components.ontology.const import (
     FINDING_UNAVAILABLE_CRITICAL_ENTITY,
     LABEL_DEVICE,
     LABEL_ENTITY,
+    LABEL_FLOOR,
     LABEL_VALIDATION_FINDING,
     SCHEMA_VERSION,
     SEVERITY_ERROR,
@@ -295,7 +298,7 @@ async def test_reconcile_category_tolerates_merge_failure_for_missing_target(
     assert count == 0
 
 
-async def test_async_run_validation_returns_counts_for_all_nine_categories(
+async def test_async_run_validation_returns_counts_for_all_categories(
     hass, mock_memgraph_client
 ) -> None:
     with (
@@ -308,6 +311,8 @@ async def test_async_run_validation_returns_counts_for_all_nine_categories(
         patch.object(validation, "_detect_invalid_relationship", return_value=[]),
         patch.object(validation, "_detect_schema_mismatch", return_value=[]),
         patch.object(validation, "_detect_missing_semantic_classification", return_value=[]),
+        patch.object(validation, "_detect_floor_missing_spatial_coverage", return_value=[]),
+        patch.object(validation, "_detect_entity_missing_floor_pin", return_value=[]),
     ):
         counts = await validation.async_run_validation(hass, mock_memgraph_client)
 
@@ -321,5 +326,32 @@ async def test_async_run_validation_returns_counts_for_all_nine_categories(
         FINDING_INVALID_RELATIONSHIP,
         FINDING_SCHEMA_MISMATCH,
         FINDING_MISSING_SEMANTIC_CLASSIFICATION,
+        FINDING_FLOOR_MISSING_SPATIAL_COVERAGE,
+        FINDING_ENTITY_MISSING_FLOOR_PIN,
     }
     assert counts[FINDING_MISSING_AREA] == 1
+
+
+# ---------------------------------------------------------------------------
+# ON-015: spatial_context floor-plan coverage gaps
+# ---------------------------------------------------------------------------
+
+
+async def test_detect_floor_missing_spatial_coverage_returns_floors(
+    mock_memgraph_client,
+) -> None:
+    mock_memgraph_client.run_query.return_value = [{"ha_id": "gorishche"}]
+
+    result = await validation._detect_floor_missing_spatial_coverage(mock_memgraph_client)
+
+    assert result == [("gorishche", LABEL_FLOOR)]
+
+
+async def test_detect_entity_missing_floor_pin_returns_entities(
+    mock_memgraph_client,
+) -> None:
+    mock_memgraph_client.run_query.return_value = [{"ha_id": "light.unpinned"}]
+
+    result = await validation._detect_entity_missing_floor_pin(mock_memgraph_client)
+
+    assert result == [("light.unpinned", LABEL_ENTITY)]

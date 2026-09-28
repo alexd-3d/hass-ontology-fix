@@ -18,6 +18,8 @@ from . import semantic_classifier
 from .const import (
     DOMAIN,
     FINDING_DUPLICATE_ENTITY,
+    FINDING_ENTITY_MISSING_FLOOR_PIN,
+    FINDING_FLOOR_MISSING_SPATIAL_COVERAGE,
     FINDING_INVALID_RELATIONSHIP,
     FINDING_MISSING_AREA,
     FINDING_MISSING_DEVICE,
@@ -31,8 +33,10 @@ from .const import (
     LABEL_AREA,
     LABEL_DEVICE,
     LABEL_ENTITY,
+    LABEL_FLOOR,
     LABEL_ONTOLOGY_SCHEMA,
     LABEL_SEMANTIC_TYPE,
+    LABEL_WALL,
     LABEL_VALIDATION_FINDING,
     REL_RELATES_TO,
     SCHEMA_SINGLETON_ID,
@@ -57,6 +61,10 @@ _CATEGORY_SEVERITY: dict[str, str] = {
     FINDING_INVALID_RELATIONSHIP: SEVERITY_ERROR,
     FINDING_SCHEMA_MISMATCH: SEVERITY_ERROR,
     FINDING_MISSING_SEMANTIC_CLASSIFICATION: SEVERITY_INFO,
+    # ON-015: gaps in optional spatial_context floor-plan coverage, not
+    # errors - a gap here just means "not mapped/pinned yet".
+    FINDING_FLOOR_MISSING_SPATIAL_COVERAGE: SEVERITY_INFO,
+    FINDING_ENTITY_MISSING_FLOOR_PIN: SEVERITY_INFO,
 }
 
 
@@ -209,6 +217,37 @@ async def _detect_missing_semantic_classification(
     return findings
 
 
+async def _detect_floor_missing_spatial_coverage(client: MemgraphClient) -> list[tuple[str, str]]:
+    """Floors with at least one Area but zero spatial_context data (no Wall,
+    no pinned Entity) (ON-015). Informational - surfaces an unmapped floor
+    plan, not an error.
+    """
+    query = (
+        f"MATCH (:{LABEL_AREA})-[:ON_FLOOR]->(f:{LABEL_FLOOR}) "
+        f"WHERE NOT (:{LABEL_WALL})-[:ON_FLOOR]->(f) "
+        f"AND NOT (:{LABEL_ENTITY})-[:PINNED_ON_FLOOR]->(f) "
+        "RETURN DISTINCT f.ha_id AS ha_id"
+    )
+    rows = await client.run_query(query, {})
+    return [(row["ha_id"], LABEL_FLOOR) for row in rows]
+
+
+async def _detect_entity_missing_floor_pin(client: MemgraphClient) -> list[tuple[str, str]]:
+    """Entities on a floor with spatial_context coverage that aren't pinned
+    yet (ON-015). Skips unmapped floors - that's
+    `_detect_floor_missing_spatial_coverage`'s gap, not this entity's.
+    """
+    query = (
+        f"MATCH (e:{LABEL_ENTITY})-[:HAS_AREA]->(:{LABEL_AREA})-[:ON_FLOOR]->(f:{LABEL_FLOOR}) "
+        f"WHERE ((:{LABEL_WALL})-[:ON_FLOOR]->(f) "
+        f"OR (:{LABEL_ENTITY})-[:PINNED_ON_FLOOR]->(f)) "
+        "AND NOT (e)-[:PINNED_ON_FLOOR]->(f) "
+        "RETURN DISTINCT e.ha_id AS ha_id"
+    )
+    rows = await client.run_query(query, {})
+    return [(row["ha_id"], LABEL_ENTITY) for row in rows]
+
+
 async def _merge_finding(
     client: MemgraphClient, category: str, target_ha_id: str, target_label: str, severity: str
 ) -> str:
@@ -311,7 +350,9 @@ async def _reconcile_category(
 
 
 async def async_run_validation(hass: HomeAssistant, client: MemgraphClient) -> dict[str, int]:
-    """Run all 9 validation categories and reconcile findings (User Story 5, FR-051-FR-056).
+    """Run all validation categories and reconcile findings (User Story 5,
+    FR-051-FR-056, plus the two ON-015 spatial-coverage categories added
+    after that spec was written).
 
     Returns a dict of open-finding counts by category from this run.
     """
@@ -329,6 +370,10 @@ async def async_run_validation(hass: HomeAssistant, client: MemgraphClient) -> d
         FINDING_MISSING_SEMANTIC_CLASSIFICATION: await _detect_missing_semantic_classification(
             hass, client
         ),
+        FINDING_FLOOR_MISSING_SPATIAL_COVERAGE: await _detect_floor_missing_spatial_coverage(
+            client
+        ),
+        FINDING_ENTITY_MISSING_FLOOR_PIN: await _detect_entity_missing_floor_pin(client),
     }
 
     counts: dict[str, int] = {}

@@ -43,6 +43,33 @@ async def test_merge_relationship_matches_both_nodes_and_merges_edge(mock_memgra
     assert params["to_ha_id"] == "device-1"
 
 
+async def test_merge_relationship_sets_extra_properties_when_given(mock_memgraph_client) -> None:
+    """ON-015: `properties` sets extra scalar properties on the relationship
+    itself (e.g. pin coordinates), beyond source/updated_at."""
+    await graph_builder.merge_relationship(
+        mock_memgraph_client,
+        "Entity",
+        "light.hall",
+        "PINNED_ON_FLOOR",
+        "Floor",
+        "drugii",
+        properties={"x": 1.5, "y": 2.5},
+    )
+
+    query, params = mock_memgraph_client.run_query_with_retry.call_args.args
+    assert "r += $properties" in query
+    assert params["properties"] == {"x": 1.5, "y": 2.5}
+
+
+async def test_merge_relationship_omits_extra_set_when_no_properties(mock_memgraph_client) -> None:
+    await graph_builder.merge_relationship(
+        mock_memgraph_client, "Area", "area-1", "HAS_DEVICE", "Device", "device-1"
+    )
+
+    query, _params = mock_memgraph_client.run_query_with_retry.call_args.args
+    assert "r += $properties" not in query
+
+
 @pytest.mark.parametrize("unsafe_label", ["Area; DROP", "Area DELETE", "Area-1", "Area'"])
 async def test_merge_node_rejects_unsafe_label(mock_memgraph_client, unsafe_label) -> None:
     with pytest.raises(ValueError):

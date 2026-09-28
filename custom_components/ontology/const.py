@@ -59,7 +59,7 @@ MAX_RELATIONSHIP_RESULT_LIMIT = 1000
 
 # Ontology schema version (Constitution Principle VI). Bump whenever labels,
 # relationship types, required properties, or graph semantics change.
-SCHEMA_VERSION = "3.1.0"
+SCHEMA_VERSION = "3.2.0"
 # The exact predecessor `migrate_schema_if_supported` (schema_migrations.py)
 # will auto-migrate in place on setup. Must always be the version the live
 # graph actually carries at the time SCHEMA_VERSION is bumped - forgetting to
@@ -68,7 +68,7 @@ SCHEMA_VERSION = "3.1.0"
 # (confirmed live 2026-09-22: bumping to 3.1.0 without also moving this to
 # 3.0.0 blocked integration setup entirely, since the graph was on 3.0.0, not
 # the stale "2.0.0" this was still pointing at).
-SCHEMA_PREVIOUS_VERSION = "3.0.0"
+SCHEMA_PREVIOUS_VERSION = "3.1.0"
 SCHEMA_SINGLETON_ID = "home_assistant_ontology"
 HOME_SINGLETON_ID = "home"
 
@@ -137,6 +137,9 @@ SERVICE_RESYNC = "resync"
 SERVICE_SYNC_ENTITY = "sync_entity"
 SERVICE_VALIDATE = "validate"
 ATTR_ENTITY_ID = "entity_id"
+
+# ON-015: on-demand floor-plan sync from spatial_context.
+SERVICE_SYNC_SPATIAL_LAYOUT = "sync_spatial_layout"
 
 # Services (contracts/services.md v2 additions)
 SERVICE_QUERY = "query"
@@ -211,6 +214,11 @@ FINDING_UNRESOLVED_SUPPLY_SOURCE = "unresolved_supply_source"
 FINDING_UNRESOLVED_SUPPLY_TARGET = "unresolved_supply_target"
 FINDING_UNRESOLVED_ENERGY_ROLE_ENTITY = "unresolved_energy_role_entity"
 
+# ON-015: surfaces spatial_context floor-plan coverage gaps. Both are
+# informational (a gap here means "not mapped yet", not a broken graph).
+FINDING_FLOOR_MISSING_SPATIAL_COVERAGE = "floor_missing_spatial_coverage"
+FINDING_ENTITY_MISSING_FLOOR_PIN = "entity_missing_floor_pin"
+
 VALIDATION_FINDING_CATEGORIES = (
     FINDING_MISSING_AREA,
     FINDING_MISSING_DEVICE,
@@ -224,6 +232,8 @@ VALIDATION_FINDING_CATEGORIES = (
     FINDING_UNRESOLVED_SUPPLY_SOURCE,
     FINDING_UNRESOLVED_SUPPLY_TARGET,
     FINDING_UNRESOLVED_ENERGY_ROLE_ENTITY,
+    FINDING_FLOOR_MISSING_SPATIAL_COVERAGE,
+    FINDING_ENTITY_MISSING_FLOOR_PIN,
 )
 
 # ValidationFinding severities/status (data-model.md ValidationFinding)
@@ -253,6 +263,18 @@ HEALTH_ERROR = "error"
 HEALTH_UNAVAILABLE = "unavailable"
 
 PLATFORMS = ["sensor", "button"]
+
+# ON-015: interfloor slab. spatial_context's `get_map` has no floor-height
+# or slab data at all - hardcoded placeholder until the plugin exposes it.
+FLOOR_HEIGHT_METERS = 2.9
+INTERFLOOR_SLAB_MATERIAL = "reinforced_concrete"
+INTERFLOOR_SLAB_ATTENUATION_DB: float | None = None  # not yet estimated
+
+# ON-015: optional spatial_context integration. Check availability before
+# use (see spatial_sync.spatial_context_available) - most installs won't
+# have it.
+SPATIAL_CONTEXT_DOMAIN = "spatial_context"
+SPATIAL_CONTEXT_GET_MAP_SERVICE = "get_map"
 
 # Node labels (data-model.md "Nodes")
 LABEL_HOME = "Home"
@@ -342,6 +364,14 @@ LABEL_DASHBOARD = "Dashboard"
 LABEL_DASHBOARD_CARD = "DashboardCard"
 LABEL_VALIDATION_FINDING = "ValidationFinding"
 
+# ON-015: Wall floor-plan structure from the optional spatial_context
+# integration. No Room label - spatial_context's "room" grouping duplicates
+# Area by name while individual pins inside it don't reliably share that
+# Area, so it's not modeled as a node; pin coordinates attach directly to
+# Floor instead (see REL_PINNED_ON_FLOOR). No ADJACENT_TO either - the
+# plugin exposes no room boundary to derive it from.
+LABEL_WALL = "Wall"
+
 # All semantic asset labels (1:1 with the classified Entity, data-model.md)
 SEMANTIC_TYPE_LABELS = (
     LABEL_GAS_CYLINDER,
@@ -359,6 +389,9 @@ SEMANTIC_TYPE_LABELS = (
 REL_CLASSIFIED_AS = "CLASSIFIED_AS"
 REL_MEASURED_BY = "MEASURED_BY"
 REL_LOCATED_IN = "LOCATED_IN"
+# ON-015: exact x/y pin coordinates, Entity straight to Floor. Distinct from
+# REL_LOCATED_IN (SemanticType -> Area, a coarse category, not a coordinate).
+REL_PINNED_ON_FLOOR = "PINNED_ON_FLOOR"
 REL_OBSERVED_BY = "OBSERVED_BY"
 REL_CONTAINS_CARD = "CONTAINS_CARD"
 REL_DISPLAYS_ENTITY = "DISPLAYS_ENTITY"
@@ -526,4 +559,7 @@ AUDIT_EVENT_CONTEXT_EXPORT = "context_export"
 
 # button.py control entity for MCP token regeneration (research.md §3)
 BUTTON_KEY_REGENERATE_MCP_TOKEN = "regenerate_mcp_token"
+
+# ON-015: button.py control entity for on-demand spatial-layout sync.
+BUTTON_KEY_SYNC_SPATIAL_LAYOUT = "sync_spatial_layout"
 

@@ -30,6 +30,7 @@ refresh_semantics:
       required: false
       selector:
         entity: {}
+sync_spatial_layout: {}
 export_overrides: {}
 import_overrides:
   fields:

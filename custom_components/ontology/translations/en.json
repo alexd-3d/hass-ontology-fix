@@ -71,12 +71,14 @@
       "ontology_last_sync": { "name": "Last sync" },
       "ontology_last_error": { "name": "Last error" },
       "ontology_schema_version": { "name": "Schema version" },
-      "ontology_sync_activity": { "name": "Sync activity" }
+      "ontology_sync_activity": { "name": "Sync activity" },
+      "ontology_spatial_sync_duration": { "name": "Spatial sync duration" }
     },
     "button": {
       "ontology_rebuild": { "name": "Rebuild" },
       "ontology_validate": { "name": "Validate" },
       "ontology_resync": { "name": "Resync" },
+      "ontology_sync_spatial_layout": { "name": "Resync spatial layout" },
       "ontology_regenerate_mcp_token": { "name": "Regenerate MCP token" }
     }
   },
@@ -130,6 +132,10 @@
           "description": "If provided, re-run classification for only this entity."
         }
       }
+    },
+    "sync_spatial_layout": {
+      "name": "Resync spatial layout",
+      "description": "Pulls the current floor plan (rooms, walls, device pins) from the optional spatial_context integration and merges it into the graph. A no-op if spatial_context isn't installed."
     },
     "export_overrides": {
       "name": "Export overrides",

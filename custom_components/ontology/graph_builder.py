@@ -171,22 +171,29 @@ async def merge_relationship(
     to_label: str,
     to_ha_id: str,
     source: str = SOURCE_HOME_ASSISTANT,
+    properties: dict[str, Any] | None = None,
 ) -> None:
-    """Idempotently create/update a relationship between two existing nodes."""
+    """Idempotently create/update a relationship between two existing nodes.
+
+    ``properties`` (ON-015) sets extra scalar properties on the edge itself,
+    e.g. pin coordinates on ``PINNED_ON_FLOOR``.
+    """
     from_label = _sanitize_label(from_label)
     to_label = _sanitize_label(to_label)
     rel_type = _sanitize_label(rel_type)
+    extra_set = " , r += $properties" if properties else ""
     query = (
         f"MATCH (a:{from_label} {{ha_id: $from_ha_id}}), "
         f"(b:{to_label} {{ha_id: $to_ha_id}}) "
         f"MERGE (a)-[r:{rel_type}]->(b) "
-        "SET r.source = $source, r.updated_at = $updated_at"
+        f"SET r.source = $source, r.updated_at = $updated_at{extra_set}"
     )
     await client.run_query_with_retry(
         query,
         {
             "from_ha_id": from_ha_id,
             "to_ha_id": to_ha_id,
+            "properties": properties or {},
             "source": source,
             "updated_at": _now_iso(),
         },

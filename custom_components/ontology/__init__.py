@@ -109,6 +109,7 @@ from .const import (
     SERVICE_SEARCH,
     SERVICE_SET_ENERGY_ROLE,
     SERVICE_SYNC_ENTITY,
+    SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_VALIDATE,
     SYNC_ACTIVITY_PUBLISH_INTERVAL_SECONDS,
 )
@@ -459,6 +460,15 @@ async def _async_handle_refresh_semantics(call: ServiceCall) -> None:
         await coordinator.async_refresh_semantics(entity_id)
 
 
+async def _async_handle_sync_spatial_layout(call: ServiceCall) -> None:
+    """Handle the `ontology.sync_spatial_layout` service call (ON-015).
+
+    A no-op if the optional spatial_context integration isn't installed.
+    """
+    for coordinator in _loaded_coordinators(call.hass):
+        await coordinator.async_sync_spatial_layout()
+
+
 async def _async_handle_query(call: ServiceCall) -> ServiceResponse:
     """Handle the `ontology.query` service call (contracts/services.md)."""
     coordinators = _loaded_coordinators(call.hass)
@@ -683,6 +693,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=_REFRESH_SEMANTICS_SCHEMA,
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_SYNC_SPATIAL_LAYOUT, _async_handle_sync_spatial_layout
+    )
+    hass.services.async_register(
         DOMAIN,
         SERVICE_QUERY,
         _async_handle_query,
@@ -793,6 +806,7 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_SYNC_ENTITY,
         SERVICE_VALIDATE,
         SERVICE_REFRESH_SEMANTICS,
+        SERVICE_SYNC_SPATIAL_LAYOUT,
         SERVICE_QUERY,
         SERVICE_EXPORT_OVERRIDES,
         SERVICE_IMPORT_OVERRIDES,

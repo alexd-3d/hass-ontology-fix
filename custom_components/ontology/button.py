@@ -14,7 +14,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import mcp_server
-from .const import BUTTON_KEY_REGENERATE_MCP_TOKEN, CONF_MCP_ENABLED, DEFAULT_MCP_ENABLED
+from .const import (
+    BUTTON_KEY_REGENERATE_MCP_TOKEN,
+    BUTTON_KEY_SYNC_SPATIAL_LAYOUT,
+    CONF_MCP_ENABLED,
+    DEFAULT_MCP_ENABLED,
+)
 from .coordinator import OntologyCoordinator
 
 
@@ -51,6 +56,11 @@ BUTTON_DESCRIPTIONS: tuple[OntologyButtonEntityDescription, ...] = (
         key="resync",
         translation_key="ontology_resync",
         press_fn=lambda coordinator: coordinator.async_resync(),
+    ),
+    OntologyButtonEntityDescription(
+        key=BUTTON_KEY_SYNC_SPATIAL_LAYOUT,
+        translation_key="ontology_sync_spatial_layout",
+        press_fn=lambda coordinator: coordinator.async_sync_spatial_layout(),
     ),
 )
 
