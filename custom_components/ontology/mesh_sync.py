@@ -62,7 +62,10 @@ async def _async_request_networkmap(
 
     unsubscribe = await mqtt.async_subscribe(hass, response_topic, _on_message)
     try:
-        await mqtt.async_publish(hass, request_topic, "raw")
+        # ON-018: request routes explicitly - without this, `depth` on some
+        # links is a non-route sentinel (255/15), not a real hop count, so
+        # route/cascade analysis can't trust it.
+        await mqtt.async_publish(hass, request_topic, json.dumps({"type": "raw", "routes": True}))
         return await asyncio.wait_for(response_future, timeout=response_timeout_seconds)
     except (TimeoutError, ValueError) as err:
         _LOGGER.warning("Zigbee2MQTT networkmap request failed: %s", err)
