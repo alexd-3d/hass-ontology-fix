@@ -5,6 +5,16 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.4.1
+
+### Added
+
+- **Zigbee coordinator device option.** If your Zigbee coordinator is a separate
+  device from Zigbee2MQTT's own "Bridge" (for example a network Zigbee adapter),
+  pick it in the integration options. Links to the coordinator then use that
+  device's floor-plan position, so distance, walls and floor slabs are worked
+  out for them too. Leaving it empty keeps the previous behavior.
+
 ## 4.4.0
 
 Ontology schema version: `3.3.0` → `3.4.0` (additive; existing graphs remain

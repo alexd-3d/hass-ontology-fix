@@ -9,6 +9,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 
 from .const import (
@@ -17,6 +18,7 @@ from .const import (
     CONF_DATABASE,
     CONF_ENCRYPTED,
     CONF_EXCLUDED_DOMAINS,
+    CONF_COORDINATOR_DEVICE_ID,
     CONF_EXCLUDED_ENTITIES,
     CONF_FLOOR_HEIGHT_M,
     CONF_FLOOR_SLAB_ATTENUATION_DB,
@@ -376,6 +378,13 @@ def _options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             max=MAX_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
         ),
     )
+    # ON-020: optional - which HA device physically holds the coordinator radio.
+    schema_dict[
+        vol.Optional(
+            CONF_COORDINATOR_DEVICE_ID,
+            description={"suggested_value": defaults.get(CONF_COORDINATOR_DEVICE_ID)},
+        )
+    ] = selector.DeviceSelector()
     # ON-019: geometry used to explain weak Zigbee links between floors.
     schema_dict[
         vol.Optional(
@@ -428,6 +437,7 @@ class OntologyOptionsFlow(OptionsFlow):
                     CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                     CONF_FLOOR_HEIGHT_M,
                     CONF_FLOOR_SLAB_ATTENUATION_DB,
+                    CONF_COORDINATOR_DEVICE_ID,
                 )
             }
             try:
@@ -491,6 +501,7 @@ class OntologyOptionsFlow(OptionsFlow):
                             CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                             DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                         ),
+                        CONF_COORDINATOR_DEVICE_ID: user_input.get(CONF_COORDINATOR_DEVICE_ID),
                         CONF_FLOOR_HEIGHT_M: user_input.get(
                             CONF_FLOOR_HEIGHT_M, DEFAULT_FLOOR_HEIGHT_M
                         ),

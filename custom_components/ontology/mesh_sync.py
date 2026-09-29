@@ -45,6 +45,15 @@ _RELATIONSHIP_NAMES = {0: "parent", 1: "child", 2: "sibling", 3: "none", 4: "pre
 _Z2M_IDENTIFIER_PREFIXES = ("zigbee2mqtt_bridge_", "zigbee2mqtt_")
 
 
+def _coordinator_ieee(payload: dict[str, Any]) -> str | None:
+    """IEEE address of the Zigbee coordinator node in a networkmap payload."""
+    value = ((payload or {}).get("data") or {}).get("value")
+    for node in (value.get("nodes") if isinstance(value, dict) else None) or []:
+        if node.get("type") == "Coordinator" and node.get("ieeeAddr"):
+            return str(node["ieeeAddr"]).lower()
+    return None
+
+
 def _ieee_to_device_ids(hass: HomeAssistant) -> dict[str, str]:
     """Map Zigbee IEEE address -> HA device id via the MQTT discovery identifiers."""
     mapping: dict[str, str] = {}
@@ -117,8 +126,14 @@ async def async_scan_zigbee_mesh(
     base_topic: str,
     retention_days: int,
     response_timeout_seconds: float,
+    coordinator_device_id: str | None = None,
 ) -> dict[str, int]:
-    """Scan the live Zigbee mesh and write one MeshSnapshot to the graph."""
+    """Scan the live Zigbee mesh and write one MeshSnapshot to the graph.
+
+    ``coordinator_device_id`` (ON-020) re-points the coordinator's links at the
+    HA device that physically holds its radio, since Z2M's own coordinator
+    "Bridge" device has no floor-plan position.
+    """
     if not mqtt_available(hass):
         _LOGGER.debug("mqtt integration not found; skipping Zigbee mesh scan")
         return {"links": 0}
@@ -140,6 +155,9 @@ async def async_scan_zigbee_mesh(
     )
 
     ieee_to_device = _ieee_to_device_ids(hass)
+    coordinator = _coordinator_ieee(payload)
+    if coordinator and coordinator_device_id:
+        ieee_to_device[coordinator] = coordinator_device_id
     link_count = 0
     for link in links:
         source = (link.get("source") or {}).get("ieeeAddr")
