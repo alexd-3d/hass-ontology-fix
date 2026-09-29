@@ -47,7 +47,6 @@ from custom_components.ontology.const import (
     SERVICE_EXPORT_OVERRIDES,
     SERVICE_IMPACT_ANALYSIS,
     SERVICE_IMPORT_OVERRIDES,
-    ATTR_MAX_LQI,
     SERVICE_LOW_BATTERY_AREAS,
     SERVICE_QUERY,
     SERVICE_REBUILD,
@@ -58,7 +57,6 @@ from custom_components.ontology.const import (
     SERVICE_SYNC_ENTITY,
     SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_VALIDATE,
-    SERVICE_WEAK_MESH_LINKS,
 )
 
 SERVICES_YAML_PATH = (
@@ -77,12 +75,11 @@ ALL_V3_SERVICES = (
     SERVICE_ACTIVE_CONSUMERS,
     SERVICE_SET_ENERGY_ROLE,
     SERVICE_DELETE_ENERGY_ROLE,
-    # ON-015/ON-016/ON-018: optional-dependency + predefined-query services
+    # ON-015/ON-016: optional-dependency + predefined-query services
     # added after this tuple's name/docstring was written - kept here so the
     # "exact set" and "has_service" checks below still cover every service.
     SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_SCAN_ZIGBEE_MESH,
-    SERVICE_WEAK_MESH_LINKS,
 )
 
 
@@ -213,39 +210,6 @@ async def test_active_consumers_service_dispatches_configured_defaults(hass) -> 
         max_age_hours=12.0,
         limit=25,
     )
-
-
-async def test_weak_mesh_links_service_dispatches_configured_defaults(hass) -> None:
-    from homeassistant.core import ServiceCall
-
-    from custom_components.ontology import _async_handle_weak_mesh_links
-
-    coordinator = AsyncMock()
-    coordinator.entry.options = {CONF_RELATIONSHIP_RESULT_LIMIT: 25}
-    call = ServiceCall(hass, DOMAIN, SERVICE_WEAK_MESH_LINKS, {})
-    expected = {"outcome": "empty"}
-
-    with (
-        patch("custom_components.ontology._loaded_coordinators", return_value=[coordinator]),
-        patch(
-            "custom_components.ontology.query_tools.weak_mesh_links",
-            AsyncMock(return_value=expected),
-        ) as weak_mesh_links,
-    ):
-        assert await _async_handle_weak_mesh_links(call) == expected
-
-    weak_mesh_links.assert_awaited_once_with(
-        coordinator.memgraph_client,
-        max_lqi=50.0,
-        limit=25,
-    )
-
-
-def test_weak_mesh_links_service_schema() -> None:
-    services = yaml.safe_load(SERVICES_YAML_PATH.read_text())
-    fields = services[SERVICE_WEAK_MESH_LINKS]["fields"]
-    assert fields[ATTR_MAX_LQI]["required"] is False
-    assert fields[ATTR_LIMIT]["required"] is False
 
 
 async def test_energy_role_services_reject_non_admin_before_graph_write(

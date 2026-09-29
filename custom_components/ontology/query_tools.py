@@ -24,8 +24,6 @@ from .const import (
     LABEL_ENTITY,
     LABEL_GAS_CYLINDER,
     LABEL_INTEGRATION,
-    LABEL_MESH_LINK,
-    LABEL_MESH_SNAPSHOT,
     MAX_QUERY_LIMIT,
     MEASUREMENT_KIND,
     MEASUREMENT_KIND_BATTERY,
@@ -45,7 +43,6 @@ from .const import (
     REL_HAS_AREA,
     REL_HAS_DEVICE,
     REL_HAS_ENTITY,
-    REL_HAS_LINK,
     REL_IN_DOMAIN,
     REL_PROVIDED_BY,
     REL_REFERENCES,
@@ -58,7 +55,6 @@ from .const import (
     RESULT_TYPE_NOT_FOUND,
     RESULT_TYPE_SEARCH,
     RESULT_TYPE_UNASSIGNED_AREA_ITEMS,
-    RESULT_TYPE_WEAK_MESH_LINKS,
     SOURCE_INFERRED,
     SOURCE_USER,
 )
@@ -555,75 +551,6 @@ async def active_consumers(
         payload,
         warnings,
         outcome=OUTCOME_OK if consumers or known_consumers else OUTCOME_EMPTY,
-    )
-
-
-async def weak_mesh_links(
-    client: MemgraphClient,
-    max_lqi: float = 50.0,
-    limit: int | None = None,
-) -> dict[str, Any]:
-    """Return the weakest Zigbee links from the most recent mesh snapshot (ON-018).
-
-    Empty (not an error) if no scan has run yet (ON-016's nightly job hasn't
-    fired, or mqtt isn't set up).
-    """
-    effective_limit = _effective_limit(limit)
-    snapshot_rows = await client.run_query(
-        f"MATCH (s:{LABEL_MESH_SNAPSHOT}) "
-        "RETURN s.ha_id AS snapshot_id, s.scanned_at AS scanned_at "
-        "ORDER BY s.scanned_at DESC LIMIT 1",
-        {},
-    )
-    if not snapshot_rows:
-        return build_tool_result(
-            "home",
-            RESULT_TYPE_WEAK_MESH_LINKS,
-            {"snapshot_id": None, "scanned_at": None, "max_lqi": float(max_lqi), "links": []},
-            ["no Zigbee mesh snapshot recorded yet"],
-            outcome=OUTCOME_EMPTY,
-        )
-    snapshot_id = snapshot_rows[0]["snapshot_id"]
-    scanned_at = snapshot_rows[0]["scanned_at"]
-
-    rows, truncated = await client.run_query_limited(
-        f"MATCH (:{LABEL_MESH_SNAPSHOT} {{ha_id: $snapshot_id}})"
-        f"-[:{REL_HAS_LINK}]->(l:{LABEL_MESH_LINK}) "
-        "WHERE l.lqi <= $max_lqi "
-        "RETURN l.from_device AS from_device, l.from_name AS from_name, "
-        "l.to_device AS to_device, l.to_name AS to_name, "
-        "l.lqi AS lqi, l.depth AS depth "
-        "ORDER BY l.lqi ASC",
-        {"snapshot_id": snapshot_id, "max_lqi": float(max_lqi)},
-        effective_limit,
-    )
-    links = [
-        {
-            "from_device": row["from_device"],
-            "from_name": row.get("from_name") or row["from_device"],
-            "to_device": row["to_device"],
-            "to_name": row.get("to_name") or row["to_device"],
-            "lqi": row.get("lqi"),
-            "depth": row.get("depth"),
-        }
-        for row in rows
-    ]
-    warnings: list[str] = []
-    if truncated:
-        warnings.append(f"weak mesh link results truncated to {effective_limit} items")
-    payload = {
-        "snapshot_id": snapshot_id,
-        "scanned_at": scanned_at,
-        "max_lqi": float(max_lqi),
-        "links": links,
-        "truncated": truncated,
-    }
-    return build_tool_result(
-        "home",
-        RESULT_TYPE_WEAK_MESH_LINKS,
-        payload,
-        warnings,
-        outcome=OUTCOME_OK if links else OUTCOME_EMPTY,
     )
 
 

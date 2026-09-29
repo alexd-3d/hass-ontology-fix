@@ -236,14 +236,6 @@
         "limit": { "name": "Result limit", "description": "Maximum number of qualifying devices." }
       }
     },
-    "weak_mesh_links": {
-      "name": "Weak mesh links",
-      "description": "Returns the weakest Zigbee links from the most recent mesh snapshot. Empty (not an error) if no scan has run yet.",
-      "fields": {
-        "max_lqi": { "name": "Maximum link quality", "description": "Only links at or below this LQI value qualify (default 50)." },
-        "limit": { "name": "Result limit", "description": "Maximum number of qualifying links." }
-      }
-    },
     "set_energy_role": {
       "name": "Set energy role",
       "description": "Sets the effective user-managed energy role for a power measurement entity.",
