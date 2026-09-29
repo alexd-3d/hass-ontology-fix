@@ -152,6 +152,10 @@ active_consumers:
           mode: box
 mesh_link_walls:
   fields:
+    include_siblings:
+      required: false
+      selector:
+        boolean:
     max_lqi:
       required: false
       selector:

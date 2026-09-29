@@ -50,6 +50,7 @@ from .const import (
     ATTR_EXPORT_TYPE,
     ATTR_LIMIT,
     ATTR_MAX_AGE_HOURS,
+    ATTR_INCLUDE_SIBLINGS,
     ATTR_MAX_LQI,
     ATTR_PARAMETERS,
     ATTR_PAYLOAD,
@@ -221,6 +222,7 @@ _ACTIVE_CONSUMERS_SCHEMA = vol.Schema(
 _MESH_LINK_WALLS_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_MAX_LQI): vol.All(_FINITE_FLOAT, vol.Range(min=0)),
+        vol.Optional(ATTR_INCLUDE_SIBLINGS): bool,
         vol.Optional(ATTR_LIMIT): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=1000)
         ),
@@ -724,6 +726,7 @@ async def _async_handle_mesh_link_walls(call: ServiceCall) -> ServiceResponse:
     return await query_tools.mesh_link_walls(
         coordinator.memgraph_client,
         max_lqi=call.data.get(ATTR_MAX_LQI, 255.0),
+        include_siblings=call.data.get(ATTR_INCLUDE_SIBLINGS, False),
         limit=min(call.data.get(ATTR_LIMIT, configured_limit), configured_limit),
         floor_height_m=float(options.get(CONF_FLOOR_HEIGHT_M, DEFAULT_FLOOR_HEIGHT_M)),
         slab_attenuation_db=float(

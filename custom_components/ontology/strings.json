@@ -238,9 +238,10 @@
     },
     "mesh_link_walls": {
       "name": "Mesh link walls",
-      "description": "Returns Zigbee links from the most recent mesh snapshot with the walls between the two devices and their total attenuation, weakest link quality first. Empty (not an error) if no scan has run yet.",
+      "description": "Returns Zigbee links from the most recent mesh snapshot with the walls between the two devices and their total attenuation, weakest link quality first. By default only parent/child links are listed (the routing tree); neighbor-table siblings are hidden. A link quality of 0 means it was not measured, not necessarily that the link is bad. Empty (not an error) if no scan has run yet.",
       "fields": {
         "max_lqi": { "name": "Maximum link quality", "description": "Only links at or below this LQI value qualify (default 255, i.e. all)." },
+        "include_siblings": { "name": "Include sibling links", "description": "Also list neighbor-table sibling links, not only parent/child routing links (default off)." },
         "limit": { "name": "Result limit", "description": "Maximum number of qualifying links." }
       }
     },

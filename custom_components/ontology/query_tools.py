@@ -810,10 +810,16 @@ async def mesh_link_walls(
     limit: int | None = None,
     floor_height_m: float = 2.8,
     slab_attenuation_db: float = 15.0,
+    include_siblings: bool = False,
 ) -> dict[str, Any]:
     """Latest-snapshot Zigbee links with the walls/slabs between their devices (ON-019).
 
-    Weakest link quality first. Both endpoint devices must resolve to a
+    Weakest link quality first. By default only parent/child links (the
+    routing tree) are returned; a Zigbee neighbor table also lists every
+    audible sibling, which is most of the raw data. A link quality of 0 is
+    reported as `lqi_measured: false` - Zigbee uses it for "not measured",
+    and a parent with an unmeasured link is worth a look, not a certain fault.
+    Both endpoint devices must resolve to a
     Device node with a floor-plan pin. On the same floor, wall crossings are
     counted from the floor-plan geometry, each wall's `attenuation_db` scaled
     up when the path crosses it at a slant. Across floors, the number of slabs
@@ -847,6 +853,7 @@ async def mesh_link_walls(
         f"MATCH (:{LABEL_MESH_SNAPSHOT} {{ha_id: $snapshot_id}})"
         f"-[:{REL_HAS_LINK}]->(l:{LABEL_MESH_LINK}) "
         "WHERE l.lqi <= $max_lqi "
+        "AND ($include_siblings OR l.relationship IS NULL OR l.relationship IN [0, 1]) "
         f"OPTIONAL MATCH (l)-[:{REL_FROM_DEVICE}]->(fd:{LABEL_DEVICE}) "
         f"OPTIONAL MATCH (l)-[:{REL_TO_DEVICE}]->(td:{LABEL_DEVICE}) "
         "RETURN l.from_device AS from_device, l.from_name AS from_name, "
@@ -855,7 +862,11 @@ async def mesh_link_walls(
         "l.relationship AS relationship, l.relationship_name AS relationship_name, "
         "fd.ha_id AS from_device_id, td.ha_id AS to_device_id "
         "ORDER BY l.lqi ASC",
-        {"snapshot_id": snapshot_id, "max_lqi": float(max_lqi)},
+        {
+            "snapshot_id": snapshot_id,
+            "max_lqi": float(max_lqi),
+            "include_siblings": include_siblings,
+        },
         effective_limit,
     )
 
@@ -888,6 +899,7 @@ async def mesh_link_walls(
             "to_device": row["to_device"],
             "to_name": row.get("to_name") or row["to_device"],
             "lqi": row.get("lqi"),
+            "lqi_measured": bool(row.get("lqi")),
             "depth": row.get("depth"),
             "relationship": row.get("relationship"),
             "relationship_name": row.get("relationship_name"),

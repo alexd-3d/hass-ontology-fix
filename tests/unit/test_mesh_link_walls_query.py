@@ -146,3 +146,24 @@ async def test_truncated_result_adds_warning() -> None:
     result = await mesh_link_walls(client, limit=5)
 
     assert any("truncated to 5" in w for w in result["warnings"])
+
+
+async def test_siblings_hidden_by_default_and_lqi_zero_flagged_unmeasured() -> None:
+    client = _client([{**_LINK, "lqi": 0}], [], [])
+
+    result = await mesh_link_walls(client)
+
+    query, params, _limit = client.run_query_limited.call_args.args
+    assert "$include_siblings OR l.relationship IS NULL OR l.relationship IN [0, 1]" in query
+    assert params["include_siblings"] is False
+    link = result["result"]["links"][0]
+    assert link["lqi"] == 0
+    assert link["lqi_measured"] is False
+
+
+async def test_include_siblings_flag_is_passed_to_the_query() -> None:
+    client = _client([], [], [])
+
+    await mesh_link_walls(client, include_siblings=True)
+
+    assert client.run_query_limited.call_args.args[1]["include_siblings"] is True
