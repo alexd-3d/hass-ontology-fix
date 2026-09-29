@@ -781,8 +781,10 @@ async def automation_dependencies(client: MemgraphClient, entity: str) -> dict[s
     )
 
 
-def _device_positions(rows: list[dict[str, Any]]) -> dict[str, tuple[str, float, float]]:
-    """device id -> (floor id, x, y): the floor where most of its entities are pinned."""
+def _device_positions(
+    rows: list[dict[str, Any]],
+) -> dict[str, tuple[str, int | None, float, float, float]]:
+    """device id -> (floor id, floor level, x, y, z): where most of its entities are pinned."""
     best: dict[str, dict[str, Any]] = {}
     for row in rows:
         if row.get("x") is None or row.get("y") is None:
@@ -791,7 +793,13 @@ def _device_positions(rows: list[dict[str, Any]]) -> dict[str, tuple[str, float,
         if current is None or row["pins"] > current["pins"]:
             best[row["device_id"]] = row
     return {
-        device_id: (row["floor_id"], float(row["x"]), float(row["y"]))
+        device_id: (
+            row["floor_id"],
+            row.get("level"),
+            float(row["x"]),
+            float(row["y"]),
+            float(row.get("z") or 0.0),
+        )
         for device_id, row in best.items()
     }
 
@@ -800,12 +808,17 @@ async def mesh_link_walls(
     client: MemgraphClient,
     max_lqi: float = 255.0,
     limit: int | None = None,
+    floor_height_m: float = 2.8,
+    slab_attenuation_db: float = 15.0,
 ) -> dict[str, Any]:
-    """Latest-snapshot Zigbee links with the walls crossed between their devices (ON-019).
+    """Latest-snapshot Zigbee links with the walls/slabs between their devices (ON-019).
 
-    Weakest link quality first. Wall crossings are only computed when both
-    endpoint devices resolve to a Device node with a floor-plan pin on the
-    same floor; otherwise `walls_crossed` is null and `same_floor` says why.
+    Weakest link quality first. Both endpoint devices must resolve to a
+    Device node with a floor-plan pin. On the same floor, wall crossings are
+    counted from the floor-plan geometry. Across floors, the number of slabs
+    is the difference in floor level (each adding `slab_attenuation_db`) and
+    the distance includes `floor_height_m` per floor plus the pins' heights;
+    wall crossings are not computed there. Otherwise those fields are null.
     Empty (not an error) if no scan has run yet.
     """
     effective_limit = _effective_limit(limit)
@@ -842,7 +855,7 @@ async def mesh_link_walls(
         effective_limit,
     )
 
-    positions: dict[str, tuple[str, float, float]] = {}
+    positions: dict[str, tuple[str, int | None, float, float, float]] = {}
     walls_by_floor: dict[str, list[dict[str, Any]]] = {}
     if rows:
         positions = _device_positions(
@@ -850,7 +863,8 @@ async def mesh_link_walls(
                 f"MATCH (d:{LABEL_DEVICE})-[:{REL_HAS_ENTITY}]->(:{LABEL_ENTITY})"
                 f"-[p:{REL_PINNED_ON_FLOOR}]->(f:{LABEL_FLOOR}) "
                 "RETURN d.ha_id AS device_id, f.ha_id AS floor_id, "
-                "avg(p.x) AS x, avg(p.y) AS y, count(p) AS pins",
+                "f.level AS level, avg(p.x) AS x, avg(p.y) AS y, avg(p.z) AS z, "
+                "count(p) AS pins",
                 {},
             )
         )
@@ -877,17 +891,28 @@ async def mesh_link_walls(
             "distance_m": None,
             "walls_crossed": None,
             "wall_attenuation_db": None,
+            "slabs_crossed": None,
+            "slab_attenuation_db": None,
         }
         from_pos = positions.get(row.get("from_device_id") or "")
         to_pos = positions.get(row.get("to_device_id") or "")
         if from_pos and to_pos:
-            link["same_floor"] = from_pos[0] == to_pos[0]
+            from_floor, from_level, fx, fy, fz = from_pos
+            to_floor, to_level, tx, ty, tz = to_pos
+            link["same_floor"] = from_floor == to_floor
             if link["same_floor"]:
-                p, q = (from_pos[1], from_pos[2]), (to_pos[1], to_pos[2])
-                crossed, total_db = wall_crossings(p, q, walls_by_floor.get(from_pos[0], []))
-                link["distance_m"] = round(distance_m(p, q), 2)
+                crossed, total_db = wall_crossings(
+                    (fx, fy), (tx, ty), walls_by_floor.get(from_floor, [])
+                )
+                link["distance_m"] = round(distance_m((fx, fy, fz), (tx, ty, tz)), 2)
                 link["walls_crossed"] = len(crossed)
                 link["wall_attenuation_db"] = round(total_db, 1)
+            elif from_level is not None and to_level is not None:
+                slabs = abs(int(to_level) - int(from_level))
+                dz = (int(to_level) - int(from_level)) * floor_height_m + tz - fz
+                link["distance_m"] = round(distance_m((fx, fy, 0.0), (tx, ty, dz)), 2)
+                link["slabs_crossed"] = slabs
+                link["slab_attenuation_db"] = round(slabs * slab_attenuation_db, 1)
         links.append(link)
 
     warnings: list[str] = []

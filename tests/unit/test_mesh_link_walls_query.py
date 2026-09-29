@@ -47,7 +47,7 @@ async def test_counts_walls_between_pinned_devices_on_same_floor() -> None:
     client = _client(
         [_LINK],
         [
-            {"device_id": "dev-a", "floor_id": "f1", "x": 0.0, "y": 0.0, "pins": 2},
+            {"device_id": "dev-a", "floor_id": "f1", "level": 1, "x": 0.0, "y": 0.0, "z": 0.0, "pins": 2},
             {"device_id": "dev-b", "floor_id": "f1", "x": 10.0, "y": 0.0, "pins": 1},
         ],
         [
@@ -79,12 +79,34 @@ async def test_counts_walls_between_pinned_devices_on_same_floor() -> None:
     assert link["relationship_name"] == "child"
 
 
-async def test_cross_floor_links_skip_wall_calculation() -> None:
+async def test_cross_floor_links_count_slabs_and_use_3d_distance() -> None:
     client = _client(
         [_LINK],
         [
-            {"device_id": "dev-a", "floor_id": "f1", "x": 0.0, "y": 0.0, "pins": 1},
-            {"device_id": "dev-b", "floor_id": "f2", "x": 10.0, "y": 0.0, "pins": 1},
+            {"device_id": "dev-a", "floor_id": "f1", "level": 1, "x": 0.0, "y": 0.0, "z": 1.0, "pins": 1},
+            {"device_id": "dev-b", "floor_id": "f2", "level": 2, "x": 0.0, "y": 4.0, "z": 2.0, "pins": 1},
+        ],
+        [],
+    )
+
+    result = await mesh_link_walls(client, floor_height_m=3.0, slab_attenuation_db=12.0)
+    link = result["result"]["links"][0]
+
+    assert link["same_floor"] is False
+    assert link["slabs_crossed"] == 1
+    assert link["slab_attenuation_db"] == 12.0
+    # dz = 1 floor * 3.0 m + 2.0 - 1.0 = 4.0; horizontal 4.0 -> hypot(4, 4)
+    assert link["distance_m"] == 5.66
+    assert link["walls_crossed"] is None
+    assert link["wall_attenuation_db"] is None
+
+
+async def test_cross_floor_without_levels_skips_slab_calculation() -> None:
+    client = _client(
+        [_LINK],
+        [
+            {"device_id": "dev-a", "floor_id": "f1", "level": None, "x": 0.0, "y": 0.0, "z": 0.0, "pins": 1},
+            {"device_id": "dev-b", "floor_id": "f2", "level": 2, "x": 1.0, "y": 0.0, "z": 0.0, "pins": 1},
         ],
         [],
     )
@@ -92,8 +114,8 @@ async def test_cross_floor_links_skip_wall_calculation() -> None:
     link = (await mesh_link_walls(client))["result"]["links"][0]
 
     assert link["same_floor"] is False
-    assert link["walls_crossed"] is None
-    assert link["wall_attenuation_db"] is None
+    assert link["slabs_crossed"] is None
+    assert link["distance_m"] is None
 
 
 async def test_unpinned_or_unresolved_devices_leave_wall_fields_null() -> None:

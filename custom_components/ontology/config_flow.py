@@ -18,6 +18,8 @@ from .const import (
     CONF_ENCRYPTED,
     CONF_EXCLUDED_DOMAINS,
     CONF_EXCLUDED_ENTITIES,
+    CONF_FLOOR_HEIGHT_M,
+    CONF_FLOOR_SLAB_ATTENUATION_DB,
     CONF_GRAPHQL_TOKEN,
     CONF_GRAPHQL_URL,
     CONF_HOST,
@@ -40,6 +42,8 @@ from .const import (
     DEFAULT_ENCRYPTED,
     DEFAULT_EXCLUDED_DOMAINS,
     DEFAULT_EXCLUDED_ENTITIES,
+    DEFAULT_FLOOR_HEIGHT_M,
+    DEFAULT_FLOOR_SLAB_ATTENUATION_DB,
     DEFAULT_GRAPHQL_TOKEN,
     DEFAULT_GRAPHQL_URL,
     DEFAULT_LOW_BATTERY_THRESHOLD,
@@ -54,10 +58,14 @@ from .const import (
     DEFAULT_STATE_CHANGE_DEBOUNCE_SECONDS,
     DEFAULT_ZIGBEE2MQTT_BASE_TOPIC,
     DOMAIN,
+    MAX_FLOOR_HEIGHT_M,
+    MAX_FLOOR_SLAB_ATTENUATION_DB,
     MAX_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
     MAX_MESH_SNAPSHOT_RETENTION_DAYS,
     MAX_RELATIONSHIP_RESULT_LIMIT,
     MAX_STATE_CHANGE_DEBOUNCE_SECONDS,
+    MIN_FLOOR_HEIGHT_M,
+    MIN_FLOOR_SLAB_ATTENUATION_DB,
     MIN_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
     MIN_MESH_SNAPSHOT_RETENTION_DAYS,
     MIN_STATE_CHANGE_DEBOUNCE_SECONDS,
@@ -368,6 +376,24 @@ def _options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             max=MAX_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
         ),
     )
+    # ON-019: geometry used to explain weak Zigbee links between floors.
+    schema_dict[
+        vol.Optional(
+            CONF_FLOOR_HEIGHT_M,
+            default=defaults.get(CONF_FLOOR_HEIGHT_M, DEFAULT_FLOOR_HEIGHT_M),
+        )
+    ] = vol.All(_FINITE_FLOAT, vol.Range(min=MIN_FLOOR_HEIGHT_M, max=MAX_FLOOR_HEIGHT_M))
+    schema_dict[
+        vol.Optional(
+            CONF_FLOOR_SLAB_ATTENUATION_DB,
+            default=defaults.get(
+                CONF_FLOOR_SLAB_ATTENUATION_DB, DEFAULT_FLOOR_SLAB_ATTENUATION_DB
+            ),
+        )
+    ] = vol.All(
+        _FINITE_FLOAT,
+        vol.Range(min=MIN_FLOOR_SLAB_ATTENUATION_DB, max=MAX_FLOOR_SLAB_ATTENUATION_DB),
+    )
     return vol.Schema(schema_dict)
 
 
@@ -400,6 +426,8 @@ class OntologyOptionsFlow(OptionsFlow):
                     CONF_MESH_SNAPSHOT_RETENTION_DAYS,
                     CONF_MESH_SNAPSHOT_SCAN_HOUR,
                     CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+                    CONF_FLOOR_HEIGHT_M,
+                    CONF_FLOOR_SLAB_ATTENUATION_DB,
                 )
             }
             try:
@@ -462,6 +490,12 @@ class OntologyOptionsFlow(OptionsFlow):
                         CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS: user_input.get(
                             CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                             DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+                        ),
+                        CONF_FLOOR_HEIGHT_M: user_input.get(
+                            CONF_FLOOR_HEIGHT_M, DEFAULT_FLOOR_HEIGHT_M
+                        ),
+                        CONF_FLOOR_SLAB_ATTENUATION_DB: user_input.get(
+                            CONF_FLOOR_SLAB_ATTENUATION_DB, DEFAULT_FLOOR_SLAB_ATTENUATION_DB
                         ),
                     },
                 )

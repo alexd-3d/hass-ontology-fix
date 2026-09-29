@@ -300,7 +300,9 @@
           "zigbee2mqtt_base_topic": "Zigbee2MQTT base topic",
           "mesh_snapshot_retention_days": "Mesh snapshot retention (days)",
           "mesh_snapshot_scan_hour": "Nightly mesh scan hour, 0-23 (empty disables the nightly scan)",
-          "mesh_snapshot_response_timeout_seconds": "Mesh scan response timeout (seconds)"
+          "mesh_snapshot_response_timeout_seconds": "Mesh scan response timeout (seconds)",
+          "floor_height_m": "Floor-to-floor height (meters, used for cross-floor Zigbee link analysis)",
+          "floor_slab_attenuation_db": "Floor slab signal attenuation (dB, used for cross-floor Zigbee link analysis)"
         }
       }
     }

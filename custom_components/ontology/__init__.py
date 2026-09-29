@@ -69,6 +69,8 @@ from .const import (
     CONF_MESH_SNAPSHOT_SCAN_HOUR,
     CONF_PASSWORD,
     CONF_PORT,
+    CONF_FLOOR_HEIGHT_M,
+    CONF_FLOOR_SLAB_ATTENUATION_DB,
     CONF_RELATIONSHIP_RESULT_LIMIT,
     CONF_USERNAME,
     DEFAULT_ACTIVE_POWER_THRESHOLD,
@@ -77,6 +79,8 @@ from .const import (
     DEFAULT_MAX_MEASUREMENT_AGE_HOURS,
     DEFAULT_MCP_ENABLED,
     DEFAULT_MESH_SNAPSHOT_SCAN_HOUR,
+    DEFAULT_FLOOR_HEIGHT_M,
+    DEFAULT_FLOOR_SLAB_ATTENUATION_DB,
     DEFAULT_RELATIONSHIP_RESULT_LIMIT,
     DOMAIN,
     ENERGY_ROLES,
@@ -721,6 +725,10 @@ async def _async_handle_mesh_link_walls(call: ServiceCall) -> ServiceResponse:
         coordinator.memgraph_client,
         max_lqi=call.data.get(ATTR_MAX_LQI, 255.0),
         limit=min(call.data.get(ATTR_LIMIT, configured_limit), configured_limit),
+        floor_height_m=float(options.get(CONF_FLOOR_HEIGHT_M, DEFAULT_FLOOR_HEIGHT_M)),
+        slab_attenuation_db=float(
+            options.get(CONF_FLOOR_SLAB_ATTENUATION_DB, DEFAULT_FLOOR_SLAB_ATTENUATION_DB)
+        ),
     )
 
 

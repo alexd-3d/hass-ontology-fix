@@ -292,6 +292,15 @@ CONF_MESH_SNAPSHOT_RETENTION_DAYS = "mesh_snapshot_retention_days"
 DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS = 30
 MIN_MESH_SNAPSHOT_RETENTION_DAYS = 1
 MAX_MESH_SNAPSHOT_RETENTION_DAYS = 365
+# ON-019: used by ontology.mesh_link_walls for links between two floors.
+CONF_FLOOR_HEIGHT_M = "floor_height_m"
+DEFAULT_FLOOR_HEIGHT_M = 2.8
+MIN_FLOOR_HEIGHT_M = 2.0
+MAX_FLOOR_HEIGHT_M = 6.0
+CONF_FLOOR_SLAB_ATTENUATION_DB = "floor_slab_attenuation_db"
+DEFAULT_FLOOR_SLAB_ATTENUATION_DB = 15.0
+MIN_FLOOR_SLAB_ATTENUATION_DB = 0.0
+MAX_FLOOR_SLAB_ATTENUATION_DB = 60.0
 CONF_MESH_SNAPSHOT_SCAN_HOUR = "mesh_snapshot_scan_hour"
 # Local hour (0-23) the nightly scan runs at, stored as a string (like
 # CONF_EXCLUDED_DOMAINS) so it can be cleared to empty in the options form -

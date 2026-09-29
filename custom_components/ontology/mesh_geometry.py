@@ -66,5 +66,6 @@ def wall_crossings(
     return crossed, total_db
 
 
-def distance_m(p: tuple[float, float], q: tuple[float, float]) -> float:
-    return math.hypot(q[0] - p[0], q[1] - p[1])
+def distance_m(p: Sequence[float], q: Sequence[float]) -> float:
+    """Straight-line distance between two 2D or 3D points."""
+    return math.dist(p, q)
