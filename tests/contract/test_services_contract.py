@@ -55,6 +55,7 @@ from custom_components.ontology.const import (
     SERVICE_SCAN_ZIGBEE_MESH,
     SERVICE_SEARCH,
     SERVICE_SYNC_ENTITY,
+    SERVICE_MESH_LINK_WALLS,
     SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_VALIDATE,
 )
@@ -75,11 +76,12 @@ ALL_V3_SERVICES = (
     SERVICE_ACTIVE_CONSUMERS,
     SERVICE_SET_ENERGY_ROLE,
     SERVICE_DELETE_ENERGY_ROLE,
-    # ON-015/ON-016: optional-dependency + predefined-query services
+    # ON-015/ON-016/ON-019: optional-dependency + predefined-query services
     # added after this tuple's name/docstring was written - kept here so the
     # "exact set" and "has_service" checks below still cover every service.
     SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_SCAN_ZIGBEE_MESH,
+    SERVICE_MESH_LINK_WALLS,
 )
 
 

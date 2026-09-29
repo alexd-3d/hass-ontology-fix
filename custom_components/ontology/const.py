@@ -59,7 +59,7 @@ MAX_RELATIONSHIP_RESULT_LIMIT = 1000
 
 # Ontology schema version (Constitution Principle VI). Bump whenever labels,
 # relationship types, required properties, or graph semantics change.
-SCHEMA_VERSION = "3.3.0"
+SCHEMA_VERSION = "3.4.0"
 # The exact predecessor `migrate_schema_if_supported` (schema_migrations.py)
 # will auto-migrate in place on setup. Must always be the version the live
 # graph actually carries at the time SCHEMA_VERSION is bumped - forgetting to
@@ -68,7 +68,7 @@ SCHEMA_VERSION = "3.3.0"
 # (confirmed live 2026-09-22: bumping to 3.1.0 without also moving this to
 # 3.0.0 blocked integration setup entirely, since the graph was on 3.0.0, not
 # the stale "2.0.0" this was still pointing at).
-SCHEMA_PREVIOUS_VERSION = "3.2.0"
+SCHEMA_PREVIOUS_VERSION = "3.3.0"
 SCHEMA_SINGLETON_ID = "home_assistant_ontology"
 HOME_SINGLETON_ID = "home"
 
@@ -157,6 +157,8 @@ ATTR_PAYLOAD = "payload"
 # Home relationship read and administrator service names.
 SERVICE_LOW_BATTERY_AREAS = "low_battery_areas"
 SERVICE_ACTIVE_CONSUMERS = "active_consumers"
+# ON-019: latest-snapshot Zigbee links with wall-crossing attenuation.
+SERVICE_MESH_LINK_WALLS = "mesh_link_walls"
 SERVICE_CREATE_SUPPLY_ASSOCIATION = "create_supply_association"
 SERVICE_LIST_SUPPLY_ASSOCIATIONS = "list_supply_associations"
 SERVICE_DELETE_SUPPLY_ASSOCIATION = "delete_supply_association"
@@ -168,6 +170,8 @@ SERVICE_SUPPLIED_TARGETS = "supplied_targets"
 
 ATTR_THRESHOLD_PERCENTAGE = "threshold_percentage"
 ATTR_THRESHOLD_WATTS = "threshold_watts"
+ATTR_MAX_LQI = "max_lqi"
+ATTR_INCLUDE_SIBLINGS = "include_siblings"
 ATTR_MAX_AGE_HOURS = "max_age_hours"
 ATTR_CYLINDER = "cylinder"
 ATTR_TARGET = "target"
@@ -289,6 +293,15 @@ CONF_MESH_SNAPSHOT_RETENTION_DAYS = "mesh_snapshot_retention_days"
 DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS = 30
 MIN_MESH_SNAPSHOT_RETENTION_DAYS = 1
 MAX_MESH_SNAPSHOT_RETENTION_DAYS = 365
+# ON-019: used by ontology.mesh_link_walls for links between two floors.
+CONF_FLOOR_HEIGHT_M = "floor_height_m"
+DEFAULT_FLOOR_HEIGHT_M = 2.8
+MIN_FLOOR_HEIGHT_M = 2.0
+MAX_FLOOR_HEIGHT_M = 6.0
+CONF_FLOOR_SLAB_ATTENUATION_DB = "floor_slab_attenuation_db"
+DEFAULT_FLOOR_SLAB_ATTENUATION_DB = 15.0
+MIN_FLOOR_SLAB_ATTENUATION_DB = 0.0
+MAX_FLOOR_SLAB_ATTENUATION_DB = 60.0
 CONF_MESH_SNAPSHOT_SCAN_HOUR = "mesh_snapshot_scan_hour"
 # Local hour (0-23) the nightly scan runs at, stored as a string (like
 # CONF_EXCLUDED_DOMAINS) so it can be cleared to empty in the options form -
@@ -424,6 +437,9 @@ REL_LOCATED_IN = "LOCATED_IN"
 REL_PINNED_ON_FLOOR = "PINNED_ON_FLOOR"
 # ON-016: MeshSnapshot -> MeshLink.
 REL_HAS_LINK = "HAS_LINK"
+# ON-019: a MeshLink's two endpoints, resolved to HA Device nodes.
+REL_FROM_DEVICE = "FROM_DEVICE"
+REL_TO_DEVICE = "TO_DEVICE"
 REL_OBSERVED_BY = "OBSERVED_BY"
 REL_CONTAINS_CARD = "CONTAINS_CARD"
 REL_DISPLAYS_ENTITY = "DISPLAYS_ENTITY"
@@ -494,6 +510,7 @@ RESULT_TYPE_LOW_BATTERY_AREAS = "low_battery_areas"
 RESULT_TYPE_ACTIVE_CONSUMERS = "active_consumers"
 RESULT_TYPE_UNASSIGNED_AREA_ITEMS = "unassigned_area_items"
 RESULT_TYPE_SUPPLIED_TARGETS = "supplied_targets"
+RESULT_TYPE_MESH_LINK_WALLS = "mesh_link_walls"
 
 OUTCOME_OK = "ok"
 OUTCOME_EMPTY = "empty"

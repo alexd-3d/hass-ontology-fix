@@ -27,6 +27,7 @@ _SAMPLE_NETWORKMAP_RESPONSE = {
                     "target": {"ieeeAddr": "0x01"},
                     "linkquality": 120,
                     "depth": 1,
+                    "relationship": 1,
                 }
             ],
         }
@@ -108,6 +109,8 @@ async def test_scan_zigbee_mesh_writes_snapshot_and_links(hass, mock_memgraph_cl
     assert link_props["to_device"] == "0x01"
     assert link_props["to_name"] == "Switch-Hall"
     assert link_props["lqi"] == 120
+    assert link_props["relationship"] == 1
+    assert link_props["relationship_name"] == "child"
 
     assert any("HAS_LINK" in q for q, _p in queries_and_params)
     assert any("DETACH DELETE" in q for q, _p in queries_and_params)
@@ -133,6 +136,52 @@ async def test_scan_zigbee_mesh_times_out_gracefully(hass, mock_memgraph_client)
         )
 
     assert result == {"links": 0}
+
+
+async def test_scan_links_mesh_link_to_device_nodes(hass, mock_memgraph_client) -> None:
+    _register_fake_mqtt_publish_service(hass)
+
+    async def _fake_subscribe(hass_arg, topic, msg_callback, qos=0):
+        msg_callback(_FakeMessage(json.dumps(_SAMPLE_NETWORKMAP_RESPONSE)))
+        return lambda: None
+
+    with (
+        patch.object(mesh_sync.mqtt, "async_subscribe", side_effect=_fake_subscribe),
+        patch.object(mesh_sync.mqtt, "async_publish", new=AsyncMock()),
+        patch.object(
+            mesh_sync, "_ieee_to_device_ids", return_value={"0x00": "dev-c", "0x01": "dev-h"}
+        ),
+    ):
+        await mesh_sync.async_scan_zigbee_mesh(
+            hass,
+            mock_memgraph_client,
+            base_topic="zigbee2mqtt",
+            retention_days=30,
+            response_timeout_seconds=150.0,
+        )
+
+    edges = set()
+    for call in mock_memgraph_client.run_query_with_retry.call_args_list:
+        query, params = call.args
+        for rel in ("FROM_DEVICE", "TO_DEVICE"):
+            if f"MERGE (a)-[r:{rel}]->(b)" in query:
+                edges.add((rel, params["to_ha_id"]))
+    assert ("FROM_DEVICE", "dev-c") in edges
+    assert ("TO_DEVICE", "dev-h") in edges
+
+
+def test_ieee_to_device_ids_maps_z2m_and_bridge_identifiers(hass) -> None:
+    from types import SimpleNamespace
+
+    devices = {
+        "a": SimpleNamespace(id="dev-a", identifiers={("mqtt", "zigbee2mqtt_0xABC")}),
+        "b": SimpleNamespace(id="dev-b", identifiers={("mqtt", "zigbee2mqtt_bridge_0xDEF")}),
+        "c": SimpleNamespace(id="dev-c", identifiers={("hue", "zigbee2mqtt_0x123")}),
+    }
+    with patch.object(mesh_sync.dr, "async_get", return_value=SimpleNamespace(devices=devices)):
+        mapping = mesh_sync._ieee_to_device_ids(hass)
+
+    assert mapping == {"0xabc": "dev-a", "0xdef": "dev-b"}
 
 
 def test_extract_links_handles_unexpected_shape() -> None:

@@ -50,6 +50,8 @@ from .const import (
     ATTR_EXPORT_TYPE,
     ATTR_LIMIT,
     ATTR_MAX_AGE_HOURS,
+    ATTR_INCLUDE_SIBLINGS,
+    ATTR_MAX_LQI,
     ATTR_PARAMETERS,
     ATTR_PAYLOAD,
     ATTR_ROLE,
@@ -68,6 +70,8 @@ from .const import (
     CONF_MESH_SNAPSHOT_SCAN_HOUR,
     CONF_PASSWORD,
     CONF_PORT,
+    CONF_FLOOR_HEIGHT_M,
+    CONF_FLOOR_SLAB_ATTENUATION_DB,
     CONF_RELATIONSHIP_RESULT_LIMIT,
     CONF_USERNAME,
     DEFAULT_ACTIVE_POWER_THRESHOLD,
@@ -76,6 +80,8 @@ from .const import (
     DEFAULT_MAX_MEASUREMENT_AGE_HOURS,
     DEFAULT_MCP_ENABLED,
     DEFAULT_MESH_SNAPSHOT_SCAN_HOUR,
+    DEFAULT_FLOOR_HEIGHT_M,
+    DEFAULT_FLOOR_SLAB_ATTENUATION_DB,
     DEFAULT_RELATIONSHIP_RESULT_LIMIT,
     DOMAIN,
     ENERGY_ROLES,
@@ -92,6 +98,7 @@ from .const import (
     RESULT_TYPE_IMPACT_ANALYSIS,
     RESULT_TYPE_LOW_BATTERY_AREAS,
     RESULT_TYPE_SEARCH,
+    RESULT_TYPE_MESH_LINK_WALLS,
     SCHEMA_VERSION,
     SERVICE_ACTIVE_CONSUMERS,
     SERVICE_AREA_CONTEXT,
@@ -114,6 +121,7 @@ from .const import (
     SERVICE_SYNC_ENTITY,
     SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_VALIDATE,
+    SERVICE_MESH_LINK_WALLS,
     SYNC_ACTIVITY_PUBLISH_INTERVAL_SECONDS,
 )
 from .coordinator import OntologyCoordinator
@@ -206,6 +214,15 @@ _ACTIVE_CONSUMERS_SCHEMA = vol.Schema(
         vol.Optional(ATTR_MAX_AGE_HOURS): vol.All(
             _FINITE_FLOAT, vol.Range(min=0, min_included=False)
         ),
+        vol.Optional(ATTR_LIMIT): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=1000)
+        ),
+    }
+)
+_MESH_LINK_WALLS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_MAX_LQI): vol.All(_FINITE_FLOAT, vol.Range(min=0)),
+        vol.Optional(ATTR_INCLUDE_SIBLINGS): bool,
         vol.Optional(ATTR_LIMIT): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=1000)
         ),
@@ -690,6 +707,34 @@ async def _async_handle_active_consumers(call: ServiceCall) -> ServiceResponse:
     )
 
 
+async def _async_handle_mesh_link_walls(call: ServiceCall) -> ServiceResponse:
+    """Handle the mesh-links-with-wall-attenuation response service (ON-019)."""
+    coordinators = _loaded_coordinators(call.hass)
+    if not coordinators:
+        return query_tools.build_tool_result(
+            "home",
+            RESULT_TYPE_MESH_LINK_WALLS,
+            None,
+            ["ontology dependency unavailable"],
+            outcome="degraded",
+        )
+    coordinator = coordinators[0]
+    options = coordinator.entry.options
+    configured_limit = int(
+        options.get(CONF_RELATIONSHIP_RESULT_LIMIT, DEFAULT_RELATIONSHIP_RESULT_LIMIT)
+    )
+    return await query_tools.mesh_link_walls(
+        coordinator.memgraph_client,
+        max_lqi=call.data.get(ATTR_MAX_LQI, 255.0),
+        include_siblings=call.data.get(ATTR_INCLUDE_SIBLINGS, False),
+        limit=min(call.data.get(ATTR_LIMIT, configured_limit), configured_limit),
+        floor_height_m=float(options.get(CONF_FLOOR_HEIGHT_M, DEFAULT_FLOOR_HEIGHT_M)),
+        slab_attenuation_db=float(
+            options.get(CONF_FLOOR_SLAB_ATTENUATION_DB, DEFAULT_FLOOR_SLAB_ATTENUATION_DB)
+        ),
+    )
+
+
 async def _async_handle_set_energy_role(call: ServiceCall) -> ServiceResponse:
     """Upsert a durable user energy role under coordinator serialization."""
     coordinators = _loaded_coordinators(call.hass)
@@ -829,6 +874,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=_ACTIVE_CONSUMERS_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_MESH_LINK_WALLS,
+        _async_handle_mesh_link_walls,
+        schema=_MESH_LINK_WALLS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
     async_register_admin_service(
         hass,
         DOMAIN,
@@ -871,6 +923,7 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_EXPORT_CONTEXT,
         SERVICE_LOW_BATTERY_AREAS,
         SERVICE_ACTIVE_CONSUMERS,
+        SERVICE_MESH_LINK_WALLS,
         SERVICE_SET_ENERGY_ROLE,
         SERVICE_DELETE_ENERGY_ROLE,
     ):
