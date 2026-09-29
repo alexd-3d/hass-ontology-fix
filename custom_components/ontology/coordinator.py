@@ -41,6 +41,7 @@ from . import (
 from .const import (
     CONF_AUTO_CLASSIFY,
     CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    CONF_COORDINATOR_DEVICE_ID,
     CONF_MESH_SNAPSHOT_RETENTION_DAYS,
     CONF_ZIGBEE2MQTT_BASE_TOPIC,
     DEFAULT_AUTO_CLASSIFY,
@@ -692,6 +693,7 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
                     CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                     DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                 ),
+                coordinator_device_id=options.get(CONF_COORDINATOR_DEVICE_ID) or None,
             )
         except Exception as err:  # noqa: BLE001
             self.state.mesh_scan_last_duration_ms = round((time.monotonic() - start) * 1000, 1)

@@ -189,3 +189,52 @@ def test_extract_links_handles_unexpected_shape() -> None:
 
     assert links == []
     assert names == {}
+
+
+def test_coordinator_ieee_reads_the_coordinator_node() -> None:
+    payload = {
+        "data": {
+            "value": {
+                "nodes": [
+                    {"ieeeAddr": "0x01", "type": "Router"},
+                    {"ieeeAddr": "0x00AB", "type": "Coordinator"},
+                ]
+            }
+        }
+    }
+
+    assert mesh_sync._coordinator_ieee(payload) == "0x00ab"
+    assert mesh_sync._coordinator_ieee({"unexpected": "shape"}) is None
+
+
+async def test_scan_points_coordinator_links_at_configured_device(hass, mock_memgraph_client) -> None:
+    _register_fake_mqtt_publish_service(hass)
+    response = json.loads(json.dumps(_SAMPLE_NETWORKMAP_RESPONSE))
+    response["data"]["value"]["nodes"][0]["type"] = "Coordinator"
+
+    async def _fake_subscribe(hass_arg, topic, msg_callback, qos=0):
+        msg_callback(_FakeMessage(json.dumps(response)))
+        return lambda: None
+
+    with (
+        patch.object(mesh_sync.mqtt, "async_subscribe", side_effect=_fake_subscribe),
+        patch.object(mesh_sync.mqtt, "async_publish", new=AsyncMock()),
+        patch.object(
+            mesh_sync, "_ieee_to_device_ids", return_value={"0x00": "bridge", "0x01": "dev-h"}
+        ),
+    ):
+        await mesh_sync.async_scan_zigbee_mesh(
+            hass,
+            mock_memgraph_client,
+            base_topic="zigbee2mqtt",
+            retention_days=30,
+            response_timeout_seconds=150.0,
+            coordinator_device_id="slzb-adapter",
+        )
+
+    targets = set()
+    for call in mock_memgraph_client.run_query_with_retry.call_args_list:
+        query, params = call.args
+        if "MERGE (a)-[r:FROM_DEVICE]->(b)" in query:
+            targets.add(params["to_ha_id"])
+    assert targets == {"slzb-adapter"}

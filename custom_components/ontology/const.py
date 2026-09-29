@@ -294,6 +294,10 @@ DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS = 30
 MIN_MESH_SNAPSHOT_RETENTION_DAYS = 1
 MAX_MESH_SNAPSHOT_RETENTION_DAYS = 365
 # ON-019: used by ontology.mesh_link_walls for links between two floors.
+# ON-020: the HA device that physically holds the Zigbee coordinator radio
+# (e.g. a network Zigbee adapter). Z2M reports the coordinator as its own
+# "Bridge" device, which has no floor-plan position of its own.
+CONF_COORDINATOR_DEVICE_ID = "coordinator_device_id"
 CONF_FLOOR_HEIGHT_M = "floor_height_m"
 DEFAULT_FLOOR_HEIGHT_M = 2.8
 MIN_FLOOR_HEIGHT_M = 2.0
