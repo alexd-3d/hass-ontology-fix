@@ -150,6 +150,21 @@ active_consumers:
           min: 1
           max: 1000
           mode: box
+mesh_health:
+  fields:
+    weak_lqi:
+      required: false
+      selector:
+        number:
+          min: 0
+          mode: box
+    limit:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 1000
+          mode: box
 mesh_link_walls:
   fields:
     include_siblings:

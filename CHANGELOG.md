@@ -5,6 +5,13 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.5.0
+
+### Added
+
+- **`ontology.mesh_health` service.** A one-call summary of your Zigbee network from the latest scan: routing parents (and any whose children all report an unmeasured link, a sign of a dead or unreachable router), devices with only weak neighbors, the coordinator's link quality, and weak links that the floor plan does not explain. Findings describe the last scan, not live state.
+- **Zigbee mesh analysis guide** (`docs/zigbee-mesh-analysis.md`): how to read the mesh data and a quick-diagnosis workflow.
+
 ## 4.4.1
 
 ### Added
