@@ -5,6 +5,14 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.3.1
+
+### Fixed
+
+- Floor-plan walls, Zigbee mesh snapshots and mesh links now show up in the
+  Explorer with readable names, their own colors and icons, and can be
+  found by search - previously they appeared as unlabeled gray "Other" nodes.
+
 ## 4.3.0
 
 Ontology schema version: `3.2.0` → `3.3.0` (additive; existing graphs remain
