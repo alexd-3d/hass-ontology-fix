@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -29,10 +30,11 @@ from .const import (
     REL_FROM_DEVICE,
     REL_HAS_LINK,
     REL_TO_DEVICE,
+    SOURCE_HOME_ASSISTANT,
     ZIGBEE2MQTT_NETWORKMAP_REQUEST_TOPIC_SUFFIX,
     ZIGBEE2MQTT_NETWORKMAP_RESPONSE_TOPIC_SUFFIX,
 )
-from .graph_builder import merge_node, merge_relationship
+from .graph_builder import merge_node
 from .memgraph_client import MemgraphClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,6 +68,45 @@ def _ieee_to_device_ids(hass: HomeAssistant) -> dict[str, str]:
                     mapping[identifier[len(prefix) :].lower()] = device.id
                     break
     return mapping
+
+
+_WRITE_BATCH_SIZE = 250
+
+_LINK_BATCH_QUERY = (
+    "UNWIND $rows AS row "
+    f"MERGE (n:{LABEL_MESH_LINK} {{ha_id: row.ha_id}}) "
+    "SET n += row.properties "
+    "WITH n, row "
+    f"MATCH (s:{LABEL_MESH_SNAPSHOT} {{ha_id: $snapshot_id}}) "
+    f"MERGE (s)-[r:{REL_HAS_LINK}]->(n) "
+    "SET r.source = $source, r.updated_at = $updated_at"
+)
+
+
+def _device_edge_query(rel_type: str, id_key: str) -> str:
+    return (
+        "UNWIND $rows AS row "
+        f"MATCH (n:{LABEL_MESH_LINK} {{ha_id: row.ha_id}}), "
+        f"(d:{LABEL_DEVICE} {{ha_id: row.{id_key}}}) "
+        f"MERGE (n)-[r:{rel_type}]->(d) "
+        "SET r.source = $source, r.updated_at = $updated_at"
+    )
+
+
+async def _async_write_link_batch(
+    client: MemgraphClient, snapshot_id: str, rows: list[dict[str, Any]]
+) -> None:
+    """Write a batch of links, their snapshot edge and device edges in three queries."""
+    common = {"source": SOURCE_HOME_ASSISTANT, "updated_at": datetime.now(UTC).isoformat()}
+    await client.run_query_with_retry(
+        _LINK_BATCH_QUERY, {"rows": rows, "snapshot_id": snapshot_id, **common}
+    )
+    for rel_type, id_key in ((REL_FROM_DEVICE, "from_device_id"), (REL_TO_DEVICE, "to_device_id")):
+        resolved = [row for row in rows if row[id_key]]
+        if resolved:
+            await client.run_query_with_retry(
+                _device_edge_query(rel_type, id_key), {"rows": resolved, **common}
+            )
 
 
 def mqtt_available(hass: HomeAssistant) -> bool:
@@ -158,42 +199,47 @@ async def async_scan_zigbee_mesh(
     coordinator = _coordinator_ieee(payload)
     if coordinator and coordinator_device_id:
         ieee_to_device[coordinator] = coordinator_device_id
-    link_count = 0
+
+    rows: list[dict[str, Any]] = []
     for link in links:
         source = (link.get("source") or {}).get("ieeeAddr")
         target = (link.get("target") or {}).get("ieeeAddr")
         if not source or not target:
             continue
-        link_id = f"{snapshot_id}::{source}->{target}"
         relationship = link.get("relationship")
         if not isinstance(relationship, int) or isinstance(relationship, bool):
             relationship = None
-        await merge_node(
-            client,
-            LABEL_MESH_LINK,
-            link_id,
+        rows.append(
             {
-                "name": f"{names.get(source, source)} → {names.get(target, target)}",
-                "from_device": source,
-                "from_name": names.get(source, source),
-                "to_device": target,
-                "to_name": names.get(target, target),
-                "lqi": link.get("linkquality"),
-                "depth": link.get("depth"),
-                "relationship": relationship,
-                "relationship_name": _RELATIONSHIP_NAMES.get(relationship),
-            },
+                "ha_id": f"{snapshot_id}::{source}->{target}",
+                "properties": {
+                    "name": f"{names.get(source, source)} → {names.get(target, target)}",
+                    "from_device": source,
+                    "from_name": names.get(source, source),
+                    "to_device": target,
+                    "to_name": names.get(target, target),
+                    "lqi": link.get("linkquality"),
+                    "depth": link.get("depth"),
+                    "relationship": relationship,
+                    "relationship_name": _RELATIONSHIP_NAMES.get(relationship),
+                    "source": SOURCE_HOME_ASSISTANT,
+                    "updated_at": now.isoformat(),
+                },
+                "from_device_id": ieee_to_device.get(source.lower()),
+                "to_device_id": ieee_to_device.get(target.lower()),
+            }
         )
-        await merge_relationship(
-            client, LABEL_MESH_SNAPSHOT, snapshot_id, REL_HAS_LINK, LABEL_MESH_LINK, link_id
-        )
-        for rel_type, ieee in ((REL_FROM_DEVICE, source), (REL_TO_DEVICE, target)):
-            device_id = ieee_to_device.get(ieee.lower())
-            if device_id:
-                await merge_relationship(
-                    client, LABEL_MESH_LINK, link_id, rel_type, LABEL_DEVICE, device_id
-                )
-        link_count += 1
+
+    started = time.monotonic()
+    for offset in range(0, len(rows), _WRITE_BATCH_SIZE):
+        await _async_write_link_batch(client, snapshot_id, rows[offset : offset + _WRITE_BATCH_SIZE])
+    link_count = len(rows)
+    _LOGGER.info(
+        "Zigbee mesh snapshot %s: wrote %d links in %.1fs",
+        snapshot_id,
+        link_count,
+        time.monotonic() - started,
+    )
 
     await _async_prune_old_snapshots(client, retention_days)
     return {"links": link_count}
