@@ -59,7 +59,7 @@ MAX_RELATIONSHIP_RESULT_LIMIT = 1000
 
 # Ontology schema version (Constitution Principle VI). Bump whenever labels,
 # relationship types, required properties, or graph semantics change.
-SCHEMA_VERSION = "3.3.0"
+SCHEMA_VERSION = "3.4.0"
 # The exact predecessor `migrate_schema_if_supported` (schema_migrations.py)
 # will auto-migrate in place on setup. Must always be the version the live
 # graph actually carries at the time SCHEMA_VERSION is bumped - forgetting to
@@ -68,7 +68,7 @@ SCHEMA_VERSION = "3.3.0"
 # (confirmed live 2026-09-22: bumping to 3.1.0 without also moving this to
 # 3.0.0 blocked integration setup entirely, since the graph was on 3.0.0, not
 # the stale "2.0.0" this was still pointing at).
-SCHEMA_PREVIOUS_VERSION = "3.2.0"
+SCHEMA_PREVIOUS_VERSION = "3.3.0"
 SCHEMA_SINGLETON_ID = "home_assistant_ontology"
 HOME_SINGLETON_ID = "home"
 
@@ -157,6 +157,8 @@ ATTR_PAYLOAD = "payload"
 # Home relationship read and administrator service names.
 SERVICE_LOW_BATTERY_AREAS = "low_battery_areas"
 SERVICE_ACTIVE_CONSUMERS = "active_consumers"
+# ON-019: latest-snapshot Zigbee links with wall-crossing attenuation.
+SERVICE_MESH_LINK_WALLS = "mesh_link_walls"
 SERVICE_CREATE_SUPPLY_ASSOCIATION = "create_supply_association"
 SERVICE_LIST_SUPPLY_ASSOCIATIONS = "list_supply_associations"
 SERVICE_DELETE_SUPPLY_ASSOCIATION = "delete_supply_association"
@@ -168,6 +170,7 @@ SERVICE_SUPPLIED_TARGETS = "supplied_targets"
 
 ATTR_THRESHOLD_PERCENTAGE = "threshold_percentage"
 ATTR_THRESHOLD_WATTS = "threshold_watts"
+ATTR_MAX_LQI = "max_lqi"
 ATTR_MAX_AGE_HOURS = "max_age_hours"
 ATTR_CYLINDER = "cylinder"
 ATTR_TARGET = "target"
@@ -424,6 +427,9 @@ REL_LOCATED_IN = "LOCATED_IN"
 REL_PINNED_ON_FLOOR = "PINNED_ON_FLOOR"
 # ON-016: MeshSnapshot -> MeshLink.
 REL_HAS_LINK = "HAS_LINK"
+# ON-019: a MeshLink's two endpoints, resolved to HA Device nodes.
+REL_FROM_DEVICE = "FROM_DEVICE"
+REL_TO_DEVICE = "TO_DEVICE"
 REL_OBSERVED_BY = "OBSERVED_BY"
 REL_CONTAINS_CARD = "CONTAINS_CARD"
 REL_DISPLAYS_ENTITY = "DISPLAYS_ENTITY"
@@ -494,6 +500,7 @@ RESULT_TYPE_LOW_BATTERY_AREAS = "low_battery_areas"
 RESULT_TYPE_ACTIVE_CONSUMERS = "active_consumers"
 RESULT_TYPE_UNASSIGNED_AREA_ITEMS = "unassigned_area_items"
 RESULT_TYPE_SUPPLIED_TARGETS = "supplied_targets"
+RESULT_TYPE_MESH_LINK_WALLS = "mesh_link_walls"
 
 OUTCOME_OK = "ok"
 OUTCOME_EMPTY = "empty"

@@ -236,6 +236,14 @@
         "limit": { "name": "Result limit", "description": "Maximum number of qualifying devices." }
       }
     },
+    "mesh_link_walls": {
+      "name": "Mesh link walls",
+      "description": "Returns Zigbee links from the most recent mesh snapshot with the walls between the two devices and their total attenuation, weakest link quality first. Empty (not an error) if no scan has run yet.",
+      "fields": {
+        "max_lqi": { "name": "Maximum link quality", "description": "Only links at or below this LQI value qualify (default 255, i.e. all)." },
+        "limit": { "name": "Result limit", "description": "Maximum number of qualifying links." }
+      }
+    },
     "set_energy_role": {
       "name": "Set energy role",
       "description": "Sets the effective user-managed energy role for a power measurement entity.",

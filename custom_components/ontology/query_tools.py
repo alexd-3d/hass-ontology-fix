@@ -22,8 +22,12 @@ from .const import (
     LABEL_DOMAIN,
     LABEL_ENERGY_ROLE_ASSIGNMENT,
     LABEL_ENTITY,
+    LABEL_FLOOR,
     LABEL_GAS_CYLINDER,
     LABEL_INTEGRATION,
+    LABEL_MESH_LINK,
+    LABEL_MESH_SNAPSHOT,
+    LABEL_WALL,
     MAX_QUERY_LIMIT,
     MEASUREMENT_KIND,
     MEASUREMENT_KIND_BATTERY,
@@ -40,18 +44,24 @@ from .const import (
     REL_ASSIGNS_ROLE_TO,
     REL_CLASSIFIED_AS,
     REL_CONTROLS,
+    REL_FROM_DEVICE,
     REL_HAS_AREA,
     REL_HAS_DEVICE,
     REL_HAS_ENTITY,
+    REL_HAS_LINK,
     REL_IN_DOMAIN,
+    REL_ON_FLOOR,
+    REL_PINNED_ON_FLOOR,
     REL_PROVIDED_BY,
     REL_REFERENCES,
+    REL_TO_DEVICE,
     RESULT_TYPE_ACTIVE_CONSUMERS,
     RESULT_TYPE_AREA_CONTEXT,
     RESULT_TYPE_AUTOMATION_DEPENDENCIES,
     RESULT_TYPE_DEVICE_CONTEXT,
     RESULT_TYPE_ENTITY_CONTEXT,
     RESULT_TYPE_LOW_BATTERY_AREAS,
+    RESULT_TYPE_MESH_LINK_WALLS,
     RESULT_TYPE_NOT_FOUND,
     RESULT_TYPE_SEARCH,
     RESULT_TYPE_UNASSIGNED_AREA_ITEMS,
@@ -59,6 +69,7 @@ from .const import (
     SOURCE_USER,
 )
 from .memgraph_client import MemgraphClient
+from .mesh_geometry import distance_m, wall_crossings
 from .redact import redact_value
 
 _NO_DEPENDENCIES_WARNING = "no known dependencies found"
@@ -767,4 +778,132 @@ async def automation_dependencies(client: MemgraphClient, entity: str) -> dict[s
     automations = _bounded_collection(automations, "automations", warnings)
     return build_tool_result(
         entity, RESULT_TYPE_AUTOMATION_DEPENDENCIES, {"automations": automations}, warnings
+    )
+
+
+def _device_positions(rows: list[dict[str, Any]]) -> dict[str, tuple[str, float, float]]:
+    """device id -> (floor id, x, y): the floor where most of its entities are pinned."""
+    best: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if row.get("x") is None or row.get("y") is None:
+            continue
+        current = best.get(row["device_id"])
+        if current is None or row["pins"] > current["pins"]:
+            best[row["device_id"]] = row
+    return {
+        device_id: (row["floor_id"], float(row["x"]), float(row["y"]))
+        for device_id, row in best.items()
+    }
+
+
+async def mesh_link_walls(
+    client: MemgraphClient,
+    max_lqi: float = 255.0,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Latest-snapshot Zigbee links with the walls crossed between their devices (ON-019).
+
+    Weakest link quality first. Wall crossings are only computed when both
+    endpoint devices resolve to a Device node with a floor-plan pin on the
+    same floor; otherwise `walls_crossed` is null and `same_floor` says why.
+    Empty (not an error) if no scan has run yet.
+    """
+    effective_limit = _effective_limit(limit)
+    snapshot_rows = await client.run_query(
+        f"MATCH (s:{LABEL_MESH_SNAPSHOT}) "
+        "RETURN s.ha_id AS snapshot_id, s.scanned_at AS scanned_at "
+        "ORDER BY s.scanned_at DESC LIMIT 1",
+        {},
+    )
+    if not snapshot_rows:
+        return build_tool_result(
+            "home",
+            RESULT_TYPE_MESH_LINK_WALLS,
+            {"snapshot_id": None, "scanned_at": None, "max_lqi": float(max_lqi), "links": []},
+            ["no Zigbee mesh snapshot recorded yet"],
+            outcome=OUTCOME_EMPTY,
+        )
+    snapshot_id = snapshot_rows[0]["snapshot_id"]
+    scanned_at = snapshot_rows[0]["scanned_at"]
+
+    rows, truncated = await client.run_query_limited(
+        f"MATCH (:{LABEL_MESH_SNAPSHOT} {{ha_id: $snapshot_id}})"
+        f"-[:{REL_HAS_LINK}]->(l:{LABEL_MESH_LINK}) "
+        "WHERE l.lqi <= $max_lqi "
+        f"OPTIONAL MATCH (l)-[:{REL_FROM_DEVICE}]->(fd:{LABEL_DEVICE}) "
+        f"OPTIONAL MATCH (l)-[:{REL_TO_DEVICE}]->(td:{LABEL_DEVICE}) "
+        "RETURN l.from_device AS from_device, l.from_name AS from_name, "
+        "l.to_device AS to_device, l.to_name AS to_name, "
+        "l.lqi AS lqi, l.depth AS depth, "
+        "l.relationship AS relationship, l.relationship_name AS relationship_name, "
+        "fd.ha_id AS from_device_id, td.ha_id AS to_device_id "
+        "ORDER BY l.lqi ASC",
+        {"snapshot_id": snapshot_id, "max_lqi": float(max_lqi)},
+        effective_limit,
+    )
+
+    positions: dict[str, tuple[str, float, float]] = {}
+    walls_by_floor: dict[str, list[dict[str, Any]]] = {}
+    if rows:
+        positions = _device_positions(
+            await client.run_query(
+                f"MATCH (d:{LABEL_DEVICE})-[:{REL_HAS_ENTITY}]->(:{LABEL_ENTITY})"
+                f"-[p:{REL_PINNED_ON_FLOOR}]->(f:{LABEL_FLOOR}) "
+                "RETURN d.ha_id AS device_id, f.ha_id AS floor_id, "
+                "avg(p.x) AS x, avg(p.y) AS y, count(p) AS pins",
+                {},
+            )
+        )
+        for wall in await client.run_query(
+            f"MATCH (w:{LABEL_WALL})-[:{REL_ON_FLOOR}]->(f:{LABEL_FLOOR}) "
+            "RETURN w.ha_id AS id, f.ha_id AS floor_id, w.points_x AS points_x, "
+            "w.points_y AS points_y, w.attenuation_db AS attenuation_db",
+            {},
+        ):
+            walls_by_floor.setdefault(wall["floor_id"], []).append(wall)
+
+    links: list[dict[str, Any]] = []
+    for row in rows:
+        link: dict[str, Any] = {
+            "from_device": row["from_device"],
+            "from_name": row.get("from_name") or row["from_device"],
+            "to_device": row["to_device"],
+            "to_name": row.get("to_name") or row["to_device"],
+            "lqi": row.get("lqi"),
+            "depth": row.get("depth"),
+            "relationship": row.get("relationship"),
+            "relationship_name": row.get("relationship_name"),
+            "same_floor": None,
+            "distance_m": None,
+            "walls_crossed": None,
+            "wall_attenuation_db": None,
+        }
+        from_pos = positions.get(row.get("from_device_id") or "")
+        to_pos = positions.get(row.get("to_device_id") or "")
+        if from_pos and to_pos:
+            link["same_floor"] = from_pos[0] == to_pos[0]
+            if link["same_floor"]:
+                p, q = (from_pos[1], from_pos[2]), (to_pos[1], to_pos[2])
+                crossed, total_db = wall_crossings(p, q, walls_by_floor.get(from_pos[0], []))
+                link["distance_m"] = round(distance_m(p, q), 2)
+                link["walls_crossed"] = len(crossed)
+                link["wall_attenuation_db"] = round(total_db, 1)
+        links.append(link)
+
+    warnings: list[str] = []
+    if truncated:
+        warnings.append(f"mesh link results truncated to {effective_limit} items")
+    payload = {
+        "snapshot_id": snapshot_id,
+        "scanned_at": scanned_at,
+        "max_lqi": float(max_lqi),
+        "links": links,
+        "truncated": truncated,
+    }
+    return build_tool_result(
+        "home",
+        RESULT_TYPE_MESH_LINK_WALLS,
+        payload,
+        warnings,
+        outcome=OUTCOME_OK if links else OUTCOME_EMPTY,
     )

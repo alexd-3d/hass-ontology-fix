@@ -20,11 +20,15 @@ from typing import Any
 
 from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 
 from .const import (
+    LABEL_DEVICE,
     LABEL_MESH_LINK,
     LABEL_MESH_SNAPSHOT,
+    REL_FROM_DEVICE,
     REL_HAS_LINK,
+    REL_TO_DEVICE,
     ZIGBEE2MQTT_NETWORKMAP_REQUEST_TOPIC_SUFFIX,
     ZIGBEE2MQTT_NETWORKMAP_RESPONSE_TOPIC_SUFFIX,
 )
@@ -34,6 +38,25 @@ from .memgraph_client import MemgraphClient
 _LOGGER = logging.getLogger(__name__)
 
 MQTT_DOMAIN = "mqtt"
+
+# Zigbee neighbor-table relationship codes (Zigbee spec, as passed through by
+# Zigbee2MQTT's raw networkmap `relationship` field).
+_RELATIONSHIP_NAMES = {0: "parent", 1: "child", 2: "sibling", 3: "none", 4: "previous_child"}
+_Z2M_IDENTIFIER_PREFIXES = ("zigbee2mqtt_bridge_", "zigbee2mqtt_")
+
+
+def _ieee_to_device_ids(hass: HomeAssistant) -> dict[str, str]:
+    """Map Zigbee IEEE address -> HA device id via the MQTT discovery identifiers."""
+    mapping: dict[str, str] = {}
+    for device in dr.async_get(hass).devices.values():
+        for domain, identifier in device.identifiers:
+            if domain != MQTT_DOMAIN or not isinstance(identifier, str):
+                continue
+            for prefix in _Z2M_IDENTIFIER_PREFIXES:
+                if identifier.startswith(prefix):
+                    mapping[identifier[len(prefix) :].lower()] = device.id
+                    break
+    return mapping
 
 
 def mqtt_available(hass: HomeAssistant) -> bool:
@@ -116,6 +139,7 @@ async def async_scan_zigbee_mesh(
         {"name": f"Mesh scan {now.strftime('%Y-%m-%d %H:%M')}", "scanned_at": now.isoformat()},
     )
 
+    ieee_to_device = _ieee_to_device_ids(hass)
     link_count = 0
     for link in links:
         source = (link.get("source") or {}).get("ieeeAddr")
@@ -123,6 +147,9 @@ async def async_scan_zigbee_mesh(
         if not source or not target:
             continue
         link_id = f"{snapshot_id}::{source}->{target}"
+        relationship = link.get("relationship")
+        if not isinstance(relationship, int) or isinstance(relationship, bool):
+            relationship = None
         await merge_node(
             client,
             LABEL_MESH_LINK,
@@ -135,11 +162,19 @@ async def async_scan_zigbee_mesh(
                 "to_name": names.get(target, target),
                 "lqi": link.get("linkquality"),
                 "depth": link.get("depth"),
+                "relationship": relationship,
+                "relationship_name": _RELATIONSHIP_NAMES.get(relationship),
             },
         )
         await merge_relationship(
             client, LABEL_MESH_SNAPSHOT, snapshot_id, REL_HAS_LINK, LABEL_MESH_LINK, link_id
         )
+        for rel_type, ieee in ((REL_FROM_DEVICE, source), (REL_TO_DEVICE, target)):
+            device_id = ieee_to_device.get(ieee.lower())
+            if device_id:
+                await merge_relationship(
+                    client, LABEL_MESH_LINK, link_id, rel_type, LABEL_DEVICE, device_id
+                )
         link_count += 1
 
     await _async_prune_old_snapshots(client, retention_days)
