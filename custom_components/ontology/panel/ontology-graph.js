@@ -21,6 +21,8 @@ const NODE_COLORS = Object.freeze({
   VEHICLE: "#5d4037", GAS_CYLINDER: "#a1665e",
   // ON-011: Reolink camera/NVR asset nodes.
   CAMERA: "#00838f",
+  // ON-018: spatial_context/Zigbee mesh nodes (ON-015/ON-016).
+  WALL: "#795548", MESH_SNAPSHOT: "#546e7a", MESH_LINK: "#78909c",
 });
 
 // nodeVal drives sphere volume; radius = ∛(val × nodeRelSize), default nodeRelSize = 4
@@ -33,6 +35,9 @@ const NODE_VALS = Object.freeze({
   BATTERY_POWERED_DEVICE: 2, ENERGY_ASSET: 2, OCCUPANCY_SENSOR: 2,
   CLIMATE_DEVICE: 2, NETWORK_DEVICE: 2, SECURITY_DEVICE: 2,
   VEHICLE: 2, GAS_CYLINDER: 2, CAMERA: 2,
+  // ON-018: MeshLink is the highest-volume new node type (hundreds per
+  // snapshot) - smaller than ENTITY so a mesh snapshot doesn't dominate the view.
+  WALL: 2, MESH_SNAPSHOT: 3, MESH_LINK: 1,
 });
 
 // ─── Vendor library loader ───────────────────────────────────────────────────

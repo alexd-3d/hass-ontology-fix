@@ -1,8 +1,9 @@
 """Contract test: registered services and `services.yaml` match
-contracts/services.md — eight v1/v2 services plus seven v3 predefined
-query-tool/impact-analysis/context-export services (T010), `sync_entity`
-requires `entity_id`, and only `ontology.query` accepts a validated
-`cypher` field (Constitution Principle X)."""
+contracts/services.md — eight v1/v2 services plus every v3+ predefined
+query-tool/impact-analysis/context-export/optional-dependency service
+(T010; ALL_V3_SERVICES grew past ON-013 as later tickets added services),
+`sync_entity` requires `entity_id`, and only `ontology.query` accepts a
+validated `cypher` field (Constitution Principle X)."""
 
 from __future__ import annotations
 
@@ -51,8 +52,10 @@ from custom_components.ontology.const import (
     SERVICE_REBUILD,
     SERVICE_REFRESH_SEMANTICS,
     SERVICE_RESYNC,
+    SERVICE_SCAN_ZIGBEE_MESH,
     SERVICE_SEARCH,
     SERVICE_SYNC_ENTITY,
+    SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_VALIDATE,
 )
 
@@ -72,6 +75,11 @@ ALL_V3_SERVICES = (
     SERVICE_ACTIVE_CONSUMERS,
     SERVICE_SET_ENERGY_ROLE,
     SERVICE_DELETE_ENERGY_ROLE,
+    # ON-015/ON-016: optional-dependency + predefined-query services
+    # added after this tuple's name/docstring was written - kept here so the
+    # "exact set" and "has_service" checks below still cover every service.
+    SERVICE_SYNC_SPATIAL_LAYOUT,
+    SERVICE_SCAN_ZIGBEE_MESH,
 )
 
 

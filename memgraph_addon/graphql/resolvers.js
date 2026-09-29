@@ -37,6 +37,10 @@ const NODE_TYPES = new Map([
   // ON-011: Reolink camera/NVR asset nodes (matched by device manufacturer,
   // see semantic_classifier.py) - was falling through to OTHER like the rest.
   ["Camera", "CAMERA"],
+  // ON-018: spatial_context/Zigbee mesh nodes (ON-015/ON-016).
+  ["Wall", "WALL"],
+  ["MeshSnapshot", "MESH_SNAPSHOT"],
+  ["MeshLink", "MESH_LINK"],
 ]);
 const SAFE_PROPERTY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SENSITIVE_PROPERTY = /(password|passphrase|secret|token|credential|connection|uri|url|host)/i;

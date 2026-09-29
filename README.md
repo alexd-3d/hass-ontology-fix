@@ -134,6 +134,12 @@ In ontology terms, Home Assistant becomes a **home digital twin**, where Areas, 
   (`ontology.search`, `ontology.area_context`, `ontology.device_context`,
   `ontology.entity_context`, `ontology.automation_dependencies`) shared by
   every access channel below (Assist, MCP, and direct service calls).
+- **Physical layer (optional)** — when the optional integrations below are
+  installed, the graph gains a physical dimension on top of its registry
+  structure: `Wall` geometry/material and exact device pin coordinates from
+  ha-spatial-context, and nightly `MeshSnapshot`/`MeshLink` Zigbee
+  connectivity history from Zigbee2MQTT. See `ontology.sync_spatial_layout`,
+  and `ontology.scan_zigbee_mesh` above.
 - **Ask Home Assistant Assist** — native Assist intents (no LLM required) let
   you ask conversational questions like "what automations depend on the
   kitchen light?" or "what devices are in the office?".

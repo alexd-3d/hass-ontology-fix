@@ -108,6 +108,11 @@ enum GraphNodeType {
   # rather than domain/device_class/keyword. Replaces the misleading VEHICLE
   # tag Reolink's AI "vehicle detected" binary_sensors used to get.
   CAMERA
+  # ON-018: spatial_context floor-plan and Zigbee mesh nodes (ON-015/ON-016) -
+  # previously unmapped, falling back to OTHER.
+  WALL
+  MESH_SNAPSHOT
+  MESH_LINK
   OTHER
 }
 
