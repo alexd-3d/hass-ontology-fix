@@ -5,6 +5,28 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.4.0
+
+Ontology schema version: `3.3.0` → `3.4.0` (additive; existing graphs remain
+valid and are flagged for a routine resync via the existing
+`schema_version_mismatch` validation finding).
+
+### Added
+
+- **Zigbee links are now connected to devices.** Each recorded mesh link points
+  to the Home Assistant devices at both ends, so the graph can answer which
+  devices in a room or area are weakly connected. Links also record whether
+  the neighbor is a parent, child or sibling, which is what separates real
+  routing paths from the many "audible neighbor" entries every router lists.
+- **`ontology.mesh_link_walls` service.** Lists the latest Zigbee links, weakest
+  first, with the walls between the two devices (from the floor plan), the
+  distance, and an estimated loss. Walls and floor slabs count for more when the
+  signal crosses them at an angle. Only parent/child links are shown by default
+  (`include_siblings` adds the rest), and a link quality of 0 is flagged as
+  "not measured". Needs the optional floor-plan and Zigbee mesh data above.
+- Two new options, **floor-to-floor height** and **floor slab attenuation**, used
+  for links between floors.
+
 ## 4.3.1
 
 ### Fixed
