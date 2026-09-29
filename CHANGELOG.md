@@ -5,6 +5,11 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.5.1
+
+### Changed
+
+- The Zigbee mesh scan now writes its links to the graph in batches instead of one query per link. The scan itself is still dominated by Zigbee2MQTT's own network-map wait, but the graph is no longer kept busy for the duration of the write.
 ## 4.5.0
 
 ### Added

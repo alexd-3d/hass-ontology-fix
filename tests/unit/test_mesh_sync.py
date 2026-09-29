@@ -48,6 +48,17 @@ class _FakeMessage:
         self.payload = payload
 
 
+def _device_edges(client) -> set[tuple[str, str]]:
+    """(relationship, device id) pairs written by the batched device-edge queries."""
+    edges = set()
+    for call in client.run_query_with_retry.call_args_list:
+        query, params = call.args
+        for rel, key in (("FROM_DEVICE", "from_device_id"), ("TO_DEVICE", "to_device_id")):
+            if f"MERGE (n)-[r:{rel}]->(d)" in query:
+                edges.update((rel, row[key]) for row in params["rows"])
+    return edges
+
+
 async def test_mqtt_available_false_when_service_missing(hass) -> None:
     assert mesh_sync.mqtt_available(hass) is False
 
@@ -100,10 +111,10 @@ async def test_scan_zigbee_mesh_writes_snapshot_and_links(hass, mock_memgraph_cl
     )
     assert "scanned_at" in snapshot_call[1]["properties"]
 
-    link_call = next(
-        (q, p) for q, p in queries_and_params if f"MERGE (n:{LABEL_MESH_LINK}" in q
-    )
-    link_props = link_call[1]["properties"]
+    batch_call = next((q, p) for q, p in queries_and_params if "UNWIND $rows" in q and "HAS_LINK" in q)
+    assert batch_call[1]["snapshot_id"]
+    (row,) = batch_call[1]["rows"]
+    link_props = row["properties"]
     assert link_props["from_device"] == "0x00"
     assert link_props["from_name"] == "Coordinator"
     assert link_props["to_device"] == "0x01"
@@ -112,7 +123,6 @@ async def test_scan_zigbee_mesh_writes_snapshot_and_links(hass, mock_memgraph_cl
     assert link_props["relationship"] == 1
     assert link_props["relationship_name"] == "child"
 
-    assert any("HAS_LINK" in q for q, _p in queries_and_params)
     assert any("DETACH DELETE" in q for q, _p in queries_and_params)
 
 
@@ -160,12 +170,7 @@ async def test_scan_links_mesh_link_to_device_nodes(hass, mock_memgraph_client) 
             response_timeout_seconds=150.0,
         )
 
-    edges = set()
-    for call in mock_memgraph_client.run_query_with_retry.call_args_list:
-        query, params = call.args
-        for rel in ("FROM_DEVICE", "TO_DEVICE"):
-            if f"MERGE (a)-[r:{rel}]->(b)" in query:
-                edges.add((rel, params["to_ha_id"]))
+    edges = _device_edges(mock_memgraph_client)
     assert ("FROM_DEVICE", "dev-c") in edges
     assert ("TO_DEVICE", "dev-h") in edges
 
@@ -232,9 +237,39 @@ async def test_scan_points_coordinator_links_at_configured_device(hass, mock_mem
             coordinator_device_id="slzb-adapter",
         )
 
-    targets = set()
-    for call in mock_memgraph_client.run_query_with_retry.call_args_list:
-        query, params = call.args
-        if "MERGE (a)-[r:FROM_DEVICE]->(b)" in query:
-            targets.add(params["to_ha_id"])
+    targets = {dev for rel, dev in _device_edges(mock_memgraph_client) if rel == "FROM_DEVICE"}
     assert targets == {"slzb-adapter"}
+
+
+async def test_links_are_written_in_batches_not_one_query_per_link(hass, mock_memgraph_client) -> None:
+    _register_fake_mqtt_publish_service(hass)
+    response = json.loads(json.dumps(_SAMPLE_NETWORKMAP_RESPONSE))
+    template = response["data"]["value"]["links"][0]
+    response["data"]["value"]["links"] = [
+        {**template, "source": {"ieeeAddr": f"0x{i:02x}"}, "target": {"ieeeAddr": "0x00"}}
+        for i in range(1, 601)
+    ]
+
+    async def _fake_subscribe(hass_arg, topic, msg_callback, qos=0):
+        msg_callback(_FakeMessage(json.dumps(response)))
+        return lambda: None
+
+    with (
+        patch.object(mesh_sync.mqtt, "async_subscribe", side_effect=_fake_subscribe),
+        patch.object(mesh_sync.mqtt, "async_publish", new=AsyncMock()),
+    ):
+        result = await mesh_sync.async_scan_zigbee_mesh(
+            hass,
+            mock_memgraph_client,
+            base_topic="zigbee2mqtt",
+            retention_days=30,
+            response_timeout_seconds=150.0,
+        )
+
+    assert result == {"links": 600}
+    batch_queries = [
+        call.args
+        for call in mock_memgraph_client.run_query_with_retry.call_args_list
+        if "UNWIND $rows" in call.args[0] and "MERGE (n:MeshLink" in call.args[0]
+    ]
+    assert [len(params["rows"]) for _q, params in batch_queries] == [250, 250, 100]
