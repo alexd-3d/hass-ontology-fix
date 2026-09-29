@@ -61,6 +61,7 @@ from .const import (
     RESULT_TYPE_DEVICE_CONTEXT,
     RESULT_TYPE_ENTITY_CONTEXT,
     RESULT_TYPE_LOW_BATTERY_AREAS,
+    RESULT_TYPE_MESH_HEALTH,
     RESULT_TYPE_MESH_LINK_WALLS,
     RESULT_TYPE_NOT_FOUND,
     RESULT_TYPE_SEARCH,
@@ -959,3 +960,166 @@ async def mesh_link_walls(
         warnings,
         outcome=OUTCOME_OK if links else OUTCOME_EMPTY,
     )
+
+
+# A measured link at or below this LQI counts as weak; an "unexplained" weak
+# link is one whose estimated geometric loss is at most this many dB (a short,
+# mostly clear path that should have been fine).
+_UNEXPLAINED_LOSS_DB = 70.0
+
+
+async def mesh_health(
+    client: MemgraphClient,
+    weak_lqi: float = 40.0,
+    limit: int | None = None,
+    floor_height_m: float = 2.8,
+    slab_attenuation_db: float = 15.0,
+) -> dict[str, Any]:
+    """One-shot Zigbee mesh health summary from the latest snapshot (ON-021).
+
+    Combines what would otherwise take several separate graph queries:
+    - `parents`: routing parents ranked by child count, with how many of their
+      child links are unmeasured (LQI 0).
+    - `suspect_parents`: parents whose every child link is unmeasured - the
+      pattern of a dead or unreachable router that neighbors still list.
+    - `weak_devices`: devices whose best measured neighbor is at or below
+      `weak_lqi`.
+    - `coordinator`: link count/quality of everything that hears the coordinator.
+    - `unexplained_weak_links`: measured links at or below `weak_lqi` that the
+      floor-plan geometry does not explain (short and lightly obstructed).
+    Reflects the last scan (nightly by default), not live state: cross-check
+    a suspect device's Home Assistant availability before concluding it is dead.
+    Empty (not an error) if no scan has run yet.
+    """
+    effective_limit = _effective_limit(limit)
+    snapshot_rows = await client.run_query(
+        f"MATCH (s:{LABEL_MESH_SNAPSHOT}) "
+        "RETURN s.ha_id AS snapshot_id, s.scanned_at AS scanned_at "
+        "ORDER BY s.scanned_at DESC LIMIT 1",
+        {},
+    )
+    if not snapshot_rows:
+        return build_tool_result(
+            "home",
+            RESULT_TYPE_MESH_HEALTH,
+            None,
+            ["no Zigbee mesh snapshot recorded yet"],
+            outcome=OUTCOME_EMPTY,
+        )
+    snapshot_id = snapshot_rows[0]["snapshot_id"]
+    params = {"snapshot_id": snapshot_id, "weak_lqi": float(weak_lqi)}
+    from_snapshot = (
+        f"MATCH (:{LABEL_MESH_SNAPSHOT} {{ha_id: $snapshot_id}})"
+        f"-[:{REL_HAS_LINK}]->(l:{LABEL_MESH_LINK}) "
+    )
+
+    parent_rows = await client.run_query(
+        from_snapshot + "WHERE l.relationship = 0 "
+        "RETURN l.from_name AS device, count(*) AS children, "
+        "sum(CASE WHEN coalesce(l.lqi, 0) = 0 THEN 1 ELSE 0 END) AS unmeasured "
+        "ORDER BY children DESC",
+        params,
+    )
+    weak_rows = await client.run_query(
+        from_snapshot + "WHERE l.lqi > 0 "
+        "UNWIND [l.from_name, l.to_name] AS device "
+        "WITH device, max(l.lqi) AS best_lqi, count(*) AS measured_links "
+        "WHERE best_lqi <= $weak_lqi "
+        "RETURN device, best_lqi, measured_links ORDER BY best_lqi ASC",
+        params,
+    )
+    coordinator_rows = await client.run_query(
+        from_snapshot + "WHERE l.to_name = 'Coordinator' AND l.lqi > 0 "
+        "RETURN count(*) AS links, avg(l.lqi) AS avg_lqi, min(l.lqi) AS min_lqi, "
+        "sum(CASE WHEN l.lqi <= $weak_lqi THEN 1 ELSE 0 END) AS weak_links",
+        params,
+    )
+
+    walls = await mesh_link_walls(
+        client,
+        max_lqi=weak_lqi,
+        limit=MAX_QUERY_LIMIT,
+        floor_height_m=floor_height_m,
+        slab_attenuation_db=slab_attenuation_db,
+        include_siblings=True,
+    )
+    weak_links = [link for link in walls["result"]["links"] if link["lqi_measured"]]
+    unexplained = [
+        link
+        for link in weak_links
+        if link["expected_loss_db"] is not None
+        and link["expected_loss_db"] <= _UNEXPLAINED_LOSS_DB
+    ]
+    unresolved = sum(1 for link in weak_links if link["expected_loss_db"] is None)
+
+    parents = [
+        {
+            "device": row["device"],
+            "children": row["children"],
+            "unmeasured_child_links": row["unmeasured"],
+        }
+        for row in parent_rows
+    ]
+    suspect_parents = [
+        p for p in parents if p["children"] and p["unmeasured_child_links"] == p["children"]
+    ]
+    coordinator = (
+        coordinator_rows[0] if coordinator_rows and coordinator_rows[0].get("links") else None
+    )
+
+    warnings: list[str] = []
+    if len(parents) > effective_limit:
+        warnings.append(f"parent list truncated to {effective_limit} items")
+    if len(weak_rows) > effective_limit:
+        warnings.append(f"weak device list truncated to {effective_limit} items")
+    if unresolved:
+        warnings.append(
+            f"{unresolved} weak link(s) could not be checked against the floor plan "
+            "(a device is not pinned or its link is not resolved)"
+        )
+    payload = {
+        "snapshot_id": snapshot_id,
+        "scanned_at": snapshot_rows[0]["scanned_at"],
+        "weak_lqi": float(weak_lqi),
+        "summary": {
+            "parents": len(parents),
+            "suspect_parents": len(suspect_parents),
+            "weak_devices": len(weak_rows),
+            "weak_links": len(weak_links),
+            "unexplained_weak_links": len(unexplained),
+        },
+        "suspect_parents": suspect_parents[:effective_limit],
+        "parents": parents[:effective_limit],
+        "weak_devices": [
+            {
+                "device": row["device"],
+                "best_lqi": row["best_lqi"],
+                "measured_links": row["measured_links"],
+            }
+            for row in weak_rows[:effective_limit]
+        ],
+        "coordinator": None
+        if coordinator is None
+        else {
+            "links": coordinator["links"],
+            "avg_lqi": round(float(coordinator["avg_lqi"]), 1),
+            "min_lqi": coordinator["min_lqi"],
+            "weak_links": coordinator["weak_links"],
+        },
+        "unexplained_weak_links": [
+            {
+                key: link[key]
+                for key in (
+                    "from_name",
+                    "to_name",
+                    "lqi",
+                    "distance_m",
+                    "walls_crossed",
+                    "wall_attenuation_db",
+                    "expected_loss_db",
+                )
+            }
+            for link in unexplained[:effective_limit]
+        ],
+    }
+    return build_tool_result("home", RESULT_TYPE_MESH_HEALTH, payload, warnings, outcome=OUTCOME_OK)

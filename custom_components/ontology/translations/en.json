@@ -236,6 +236,14 @@
         "limit": { "name": "Result limit", "description": "Maximum number of qualifying devices." }
       }
     },
+    "mesh_health": {
+      "name": "Mesh health",
+      "description": "One-shot Zigbee mesh health summary from the most recent snapshot: routing parents (and ones whose children all report unmeasured link quality, a sign of a dead router), devices with only weak neighbors, the coordinator's link quality, and weak links the floor plan does not explain. Reflects the last scan, not live state. Empty (not an error) if no scan has run yet.",
+      "fields": {
+        "weak_lqi": { "name": "Weak link quality", "description": "Links and devices at or below this LQI count as weak (default 40)." },
+        "limit": { "name": "Result limit", "description": "Maximum number of items in each list." }
+      }
+    },
     "mesh_link_walls": {
       "name": "Mesh link walls",
       "description": "Returns Zigbee links from the most recent mesh snapshot with the walls between the two devices and their total attenuation, weakest link quality first. By default only parent/child links are listed (the routing tree); neighbor-table siblings are hidden. A link quality of 0 means it was not measured, not necessarily that the link is bad. Empty (not an error) if no scan has run yet.",

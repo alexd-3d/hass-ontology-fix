@@ -60,6 +60,7 @@ from .const import (
     ATTR_TERM,
     ATTR_THRESHOLD_PERCENTAGE,
     ATTR_THRESHOLD_WATTS,
+    ATTR_WEAK_LQI,
     CONF_ACTIVE_POWER_THRESHOLD,
     CONF_DATABASE,
     CONF_ENCRYPTED,
@@ -98,6 +99,7 @@ from .const import (
     RESULT_TYPE_IMPACT_ANALYSIS,
     RESULT_TYPE_LOW_BATTERY_AREAS,
     RESULT_TYPE_SEARCH,
+    RESULT_TYPE_MESH_HEALTH,
     RESULT_TYPE_MESH_LINK_WALLS,
     SCHEMA_VERSION,
     SERVICE_ACTIVE_CONSUMERS,
@@ -121,6 +123,7 @@ from .const import (
     SERVICE_SYNC_ENTITY,
     SERVICE_SYNC_SPATIAL_LAYOUT,
     SERVICE_VALIDATE,
+    SERVICE_MESH_HEALTH,
     SERVICE_MESH_LINK_WALLS,
     SYNC_ACTIVITY_PUBLISH_INTERVAL_SECONDS,
 )
@@ -223,6 +226,14 @@ _MESH_LINK_WALLS_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_MAX_LQI): vol.All(_FINITE_FLOAT, vol.Range(min=0)),
         vol.Optional(ATTR_INCLUDE_SIBLINGS): bool,
+        vol.Optional(ATTR_LIMIT): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=1000)
+        ),
+    }
+)
+_MESH_HEALTH_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_WEAK_LQI): vol.All(_FINITE_FLOAT, vol.Range(min=0)),
         vol.Optional(ATTR_LIMIT): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=1000)
         ),
@@ -735,6 +746,33 @@ async def _async_handle_mesh_link_walls(call: ServiceCall) -> ServiceResponse:
     )
 
 
+async def _async_handle_mesh_health(call: ServiceCall) -> ServiceResponse:
+    """Handle the one-shot Zigbee mesh health response service (ON-021)."""
+    coordinators = _loaded_coordinators(call.hass)
+    if not coordinators:
+        return query_tools.build_tool_result(
+            "home",
+            RESULT_TYPE_MESH_HEALTH,
+            None,
+            ["ontology dependency unavailable"],
+            outcome="degraded",
+        )
+    coordinator = coordinators[0]
+    options = coordinator.entry.options
+    configured_limit = int(
+        options.get(CONF_RELATIONSHIP_RESULT_LIMIT, DEFAULT_RELATIONSHIP_RESULT_LIMIT)
+    )
+    return await query_tools.mesh_health(
+        coordinator.memgraph_client,
+        weak_lqi=call.data.get(ATTR_WEAK_LQI, 40.0),
+        limit=min(call.data.get(ATTR_LIMIT, configured_limit), configured_limit),
+        floor_height_m=float(options.get(CONF_FLOOR_HEIGHT_M, DEFAULT_FLOOR_HEIGHT_M)),
+        slab_attenuation_db=float(
+            options.get(CONF_FLOOR_SLAB_ATTENUATION_DB, DEFAULT_FLOOR_SLAB_ATTENUATION_DB)
+        ),
+    )
+
+
 async def _async_handle_set_energy_role(call: ServiceCall) -> ServiceResponse:
     """Upsert a durable user energy role under coordinator serialization."""
     coordinators = _loaded_coordinators(call.hass)
@@ -876,6 +914,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN,
+        SERVICE_MESH_HEALTH,
+        _async_handle_mesh_health,
+        schema=_MESH_HEALTH_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
         SERVICE_MESH_LINK_WALLS,
         _async_handle_mesh_link_walls,
         schema=_MESH_LINK_WALLS_SCHEMA,
@@ -924,6 +969,7 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_LOW_BATTERY_AREAS,
         SERVICE_ACTIVE_CONSUMERS,
         SERVICE_MESH_LINK_WALLS,
+        SERVICE_MESH_HEALTH,
         SERVICE_SET_ENERGY_ROLE,
         SERVICE_DELETE_ENERGY_ROLE,
     ):

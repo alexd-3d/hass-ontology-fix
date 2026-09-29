@@ -101,7 +101,8 @@ In ontology terms, Home Assistant becomes a **home digital twin**, where Areas, 
   `ontology.sync_spatial_layout` (optional — requires the ha-spatial-context
   integration), `ontology.scan_zigbee_mesh` (optional — requires the `mqtt`
   integration), `ontology.mesh_link_walls` (Zigbee links with the
-  walls between the two devices).
+  walls between the two devices), `ontology.mesh_health` (one-shot Zigbee
+  mesh health summary).
 - **Sensors** for sync health, node/relationship counts, last sync time,
   last error, schema version, spatial layout sync duration, and Zigbee mesh
   scan duration.
@@ -141,6 +142,8 @@ In ontology terms, Home Assistant becomes a **home digital twin**, where Areas, 
   ha-spatial-context, and nightly `MeshSnapshot`/`MeshLink` Zigbee
   connectivity history from Zigbee2MQTT. See `ontology.sync_spatial_layout`,
   `ontology.scan_zigbee_mesh`, and `ontology.mesh_link_walls` above.
+  See [docs/zigbee-mesh-analysis.md](docs/zigbee-mesh-analysis.md) for how to
+  read the results and a quick-diagnosis workflow.
 - **Ask Home Assistant Assist** — native Assist intents (no LLM required) let
   you ask conversational questions like "what automations depend on the
   kitchen light?" or "what devices are in the office?".
