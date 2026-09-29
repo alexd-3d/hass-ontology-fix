@@ -75,6 +75,8 @@ async def test_counts_walls_between_pinned_devices_on_same_floor() -> None:
     assert link["walls_crossed"] == 1
     assert link["wall_attenuation_db"] == 6.0
     assert link["distance_m"] == 10.0
+    assert link["free_space_loss_db"] == 60.2
+    assert link["expected_loss_db"] == 66.2
     assert link["same_floor"] is True
     assert link["relationship_name"] == "child"
 
@@ -94,9 +96,13 @@ async def test_cross_floor_links_count_slabs_and_use_3d_distance() -> None:
 
     assert link["same_floor"] is False
     assert link["slabs_crossed"] == 1
-    assert link["slab_attenuation_db"] == 12.0
-    # dz = 1 floor * 3.0 m + 2.0 - 1.0 = 4.0; horizontal 4.0 -> hypot(4, 4)
+    # dz = 1 floor * 3.0 m + 2.0 - 1.0 = 4.0; horizontal 4.0 -> hypot(4, 4) = 5.66.
+    # The 45-degree path is 1/sin(45) = 1.414x longer through the slab than a
+    # vertical one: 12 dB * 1.414 = 17.0 dB.
     assert link["distance_m"] == 5.66
+    assert link["slab_attenuation_db"] == 17.0
+    assert link["free_space_loss_db"] == 55.3
+    assert link["expected_loss_db"] == 72.3
     assert link["walls_crossed"] is None
     assert link["wall_attenuation_db"] is None
 

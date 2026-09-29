@@ -69,7 +69,7 @@ from .const import (
     SOURCE_USER,
 )
 from .memgraph_client import MemgraphClient
-from .mesh_geometry import distance_m, wall_crossings
+from .mesh_geometry import distance_m, free_space_loss_db, slab_factor, wall_crossings
 from .redact import redact_value
 
 _NO_DEPENDENCIES_WARNING = "no known dependencies found"
@@ -815,10 +815,14 @@ async def mesh_link_walls(
 
     Weakest link quality first. Both endpoint devices must resolve to a
     Device node with a floor-plan pin. On the same floor, wall crossings are
-    counted from the floor-plan geometry. Across floors, the number of slabs
-    is the difference in floor level (each adding `slab_attenuation_db`) and
-    the distance includes `floor_height_m` per floor plus the pins' heights;
-    wall crossings are not computed there. Otherwise those fields are null.
+    counted from the floor-plan geometry, each wall's `attenuation_db` scaled
+    up when the path crosses it at a slant. Across floors, the number of slabs
+    is the difference in floor level (each adding `slab_attenuation_db`,
+    scaled up by the slant of the path) and the distance includes
+    `floor_height_m` per floor plus the pins' heights; wall crossings are not
+    computed there. `expected_loss_db` = free-space loss over the distance plus
+    walls/slabs (not directly comparable to LQI, which is not linear in dB).
+    Fields are null when the geometry can't be resolved.
     Empty (not an error) if no scan has run yet.
     """
     effective_limit = _effective_limit(limit)
@@ -893,6 +897,8 @@ async def mesh_link_walls(
             "wall_attenuation_db": None,
             "slabs_crossed": None,
             "slab_attenuation_db": None,
+            "free_space_loss_db": None,
+            "expected_loss_db": None,
         }
         from_pos = positions.get(row.get("from_device_id") or "")
         to_pos = positions.get(row.get("to_device_id") or "")
@@ -907,12 +913,21 @@ async def mesh_link_walls(
                 link["distance_m"] = round(distance_m((fx, fy, fz), (tx, ty, tz)), 2)
                 link["walls_crossed"] = len(crossed)
                 link["wall_attenuation_db"] = round(total_db, 1)
+                link["free_space_loss_db"] = round(free_space_loss_db(link["distance_m"]), 1)
+                link["expected_loss_db"] = round(
+                    link["free_space_loss_db"] + link["wall_attenuation_db"], 1
+                )
             elif from_level is not None and to_level is not None:
                 slabs = abs(int(to_level) - int(from_level))
                 dz = (int(to_level) - int(from_level)) * floor_height_m + tz - fz
                 link["distance_m"] = round(distance_m((fx, fy, 0.0), (tx, ty, dz)), 2)
                 link["slabs_crossed"] = slabs
-                link["slab_attenuation_db"] = round(slabs * slab_attenuation_db, 1)
+                slab_db = slabs * slab_attenuation_db * slab_factor(link["distance_m"], dz)
+                link["slab_attenuation_db"] = round(slab_db, 1)
+                link["free_space_loss_db"] = round(free_space_loss_db(link["distance_m"]), 1)
+                link["expected_loss_db"] = round(
+                    link["free_space_loss_db"] + link["slab_attenuation_db"], 1
+                )
         links.append(link)
 
     warnings: list[str] = []
