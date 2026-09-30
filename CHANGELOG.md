@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.0
+
+### Changed
+
+- **Doors and windows now count in Zigbee link loss estimates.** `ontology.mesh_link_walls` (and `ontology.mesh_health`, which builds on it) price a same-floor link that passes through a door or window drawn in `ha-spatial-context` as that opening, 3 dB for a door and 2 dB for a window, instead of the full wall around it. The new `openings_crossed` field counts these crossings (they are still included in `walls_crossed`). Links that cross a wall beside an opening, and walls without openings, are unchanged. The two values are fixed, not options.
+
 ## 4.6.0
 
 ### Added
