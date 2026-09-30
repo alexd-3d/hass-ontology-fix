@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.1
+
+### Changed
+
+- Integration manifest metadata (`codeowners`, `documentation`, `issue_tracker`) now points to this fork instead of the upstream project.
+
 ## 4.7.0
 
 ### Changed
