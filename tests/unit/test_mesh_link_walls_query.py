@@ -167,3 +167,56 @@ async def test_include_siblings_flag_is_passed_to_the_query() -> None:
     await mesh_link_walls(client, include_siblings=True)
 
     assert client.run_query_limited.call_args.args[1]["include_siblings"] is True
+
+
+def _pins(y_b: float = 0.0):
+    return [
+        {"device_id": "dev-a", "floor_id": "f1", "level": 1, "x": 0.0, "y": 0.0, "z": 0.0, "pins": 1},
+        {"device_id": "dev-b", "floor_id": "f1", "level": 1, "x": 10.0, "y": y_b, "z": 0.0, "pins": 1},
+    ]
+
+
+def _wall_with_door():
+    return {
+        "id": "w1",
+        "floor_id": "f1",
+        "points_x": [5.0, 5.0],
+        "points_y": [-5.0, 5.0],
+        "attenuation_db": 6.0,
+        "opening_types": ["door"],
+        "opening_x": [5.0],
+        "opening_y": [0.0],
+        "opening_width": [1.0],
+    }
+
+
+async def test_link_through_a_door_is_priced_as_the_door() -> None:
+    client = _client([_LINK], _pins(), [_wall_with_door()])
+
+    link = (await mesh_link_walls(client))["result"]["links"][0]
+
+    assert link["walls_crossed"] == 1
+    assert link["openings_crossed"] == 1
+    assert link["wall_attenuation_db"] == 3.0
+    assert link["expected_loss_db"] == 63.2  # 60.2 free space + 3 dB door
+
+
+async def test_link_beside_the_door_pays_the_full_wall() -> None:
+    # Line from (0,0) to (10,4) meets x=5 at y=2: outside the 1 m door at y=0.
+    client = _client([_LINK], _pins(y_b=4.0), [_wall_with_door()])
+
+    link = (await mesh_link_walls(client))["result"]["links"][0]
+
+    assert link["openings_crossed"] == 0
+    assert link["wall_attenuation_db"] > 6.0  # slanted, scaled up
+    assert link["walls_crossed"] == 1
+
+
+async def test_wall_query_asks_for_the_opening_arrays() -> None:
+    client = _client([_LINK], _pins(), [_wall_with_door()])
+
+    await mesh_link_walls(client)
+
+    wall_query = client.run_query.await_args_list[2].args[0]
+    for column in ("opening_types", "opening_x", "opening_y", "opening_width"):
+        assert f"w.{column}" in wall_query

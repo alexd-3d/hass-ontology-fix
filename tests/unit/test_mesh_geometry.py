@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from custom_components.ontology.mesh_geometry import (
     MAX_OBLIQUE_FACTOR,
+    OPENING_ATTENUATION_DB,
     distance_m,
     free_space_loss_db,
     segments_intersect,
     slab_factor,
+    wall_crossing_details,
     wall_crossings,
 )
 
@@ -75,3 +77,67 @@ def test_free_space_loss_grows_with_distance_and_clamps_below_1m() -> None:
     assert round(free_space_loss_db(1.0), 1) == 40.2
     assert round(free_space_loss_db(10.0), 1) == 60.2
     assert free_space_loss_db(0.3) == free_space_loss_db(1.0)
+
+
+def _wall_with_openings(*openings: tuple[str, float, float, float]) -> dict:
+    """The vertical 6 dB wall at x=5 with (type, centre_x, centre_y, width) openings."""
+    return {
+        **_VERTICAL_WALL,
+        "opening_types": [o[0] for o in openings],
+        "opening_x": [o[1] for o in openings],
+        "opening_y": [o[2] for o in openings],
+        "opening_width": [o[3] for o in openings],
+    }
+
+
+def test_opening_constants_are_the_agreed_door_and_window_values() -> None:
+    assert OPENING_ATTENUATION_DB == {"door": 3.0, "window": 2.0}
+
+
+def test_path_through_a_door_uses_door_loss_instead_of_wall_loss() -> None:
+    wall = _wall_with_openings(("door", 5.0, 0.0, 1.0))
+    (detail,) = wall_crossing_details((0, 0), (10, 0), [wall])
+    assert detail == {"id": "w1", "attenuation_db": 3.0, "opening": "door"}
+    assert wall_crossings((0, 0), (10, 0), [wall]) == (["w1"], 3.0)
+
+
+def test_path_through_a_window_uses_window_loss() -> None:
+    wall = _wall_with_openings(("window", 5.0, 2.0, 2.0))
+    (detail,) = wall_crossing_details((0, 2), (10, 2), [wall])
+    assert detail["attenuation_db"] == 2.0
+    assert detail["opening"] == "window"
+
+
+def test_path_beside_the_opening_still_pays_full_wall_loss() -> None:
+    wall = _wall_with_openings(("door", 5.0, 0.0, 1.0))
+    # Crosses the wall at y=3, well outside the 1 m door centred at y=0.
+    (detail,) = wall_crossing_details((0, 3), (10, 3), [wall])
+    assert detail == {"id": "w1", "attenuation_db": 6.0, "opening": None}
+
+
+def test_opening_edge_is_inclusive_and_centre_based() -> None:
+    wall = _wall_with_openings(("door", 5.0, 0.0, 2.0))
+    assert wall_crossing_details((0, 1), (10, 1), [wall])[0]["opening"] == "door"
+    assert wall_crossing_details((0, 1.01), (10, 1.01), [wall])[0]["opening"] is None
+
+
+def test_opening_loss_is_scaled_by_slant_like_a_wall() -> None:
+    wall = _wall_with_openings(("door", 5.0, 0.0, 4.0))
+    (detail,) = wall_crossing_details((0, -5), (10, 5), [wall])  # 45 degrees
+    assert detail["opening"] == "door"
+    assert abs(detail["attenuation_db"] - 3.0 * (2**0.5)) < 1e-9
+
+
+def test_unknown_opening_type_and_ragged_arrays_are_ignored() -> None:
+    wall = {
+        **_VERTICAL_WALL,
+        "opening_types": ["gate", "door"],
+        "opening_x": [5.0],
+        "opening_y": [0.0],
+        "opening_width": [2.0],
+    }
+    assert wall_crossing_details((0, 0), (10, 0), [wall])[0]["opening"] is None
+
+
+def test_walls_from_older_syncs_without_openings_still_work() -> None:
+    assert wall_crossing_details((0, 0), (10, 0), [_VERTICAL_WALL])[0]["opening"] is None

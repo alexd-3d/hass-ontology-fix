@@ -10,6 +10,10 @@ _EPSILON = 1e-9
 # A near-parallel path would give an unbounded 1/cos factor; the path through
 # a real wall is never that long, so cap the slant multiplier.
 MAX_OBLIQUE_FACTOR = 3.0
+# Loss for a path that goes through a door or window instead of the wall around
+# it (square-on; slanted paths are scaled like walls). The plugin gives no
+# value for openings: a plain wooden door and ordinary glass.
+OPENING_ATTENUATION_DB = {"door": 3.0, "window": 2.0}
 # Free-space loss at 1 m for 2.4 GHz (Zigbee): 20*log10(2440 MHz) - 27.55.
 _FSPL_1M_2_4GHZ_DB = 40.2
 
@@ -70,6 +74,74 @@ def _segment_factor(
     return oblique_factor(cos_incidence)
 
 
+def _crossing_point(
+    p: tuple[float, float],
+    q: tuple[float, float],
+    a: tuple[float, float],
+    b: tuple[float, float],
+) -> tuple[float, float]:
+    """Where line p-q meets wall segment a-b (nearest point on a-b if collinear)."""
+    rx, ry = q[0] - p[0], q[1] - p[1]
+    sx, sy = b[0] - a[0], b[1] - a[1]
+    denom = _cross(rx, ry, sx, sy)
+    if abs(denom) < _EPSILON:
+        return ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+    t = _cross(a[0] - p[0], a[1] - p[1], sx, sy) / denom
+    return (p[0] + t * rx, p[1] + t * ry)
+
+
+def _opening_at(wall: dict[str, Any], point: tuple[float, float]) -> str | None:
+    """Type of the wall's door/window the point falls in, if any.
+
+    Openings are stored as parallel arrays (centre ``opening_x/y``, extent
+    ``opening_width`` along the wall, metres).
+    """
+    types = wall.get("opening_types") or []
+    xs = wall.get("opening_x") or []
+    ys = wall.get("opening_y") or []
+    widths = wall.get("opening_width") or []
+    for kind, ox, oy, width in zip(types, xs, ys, widths, strict=False):
+        if kind in OPENING_ATTENUATION_DB and math.hypot(point[0] - ox, point[1] - oy) <= width / 2:
+            return kind
+    return None
+
+
+def wall_crossing_details(
+    p: tuple[float, float],
+    q: tuple[float, float],
+    walls: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Per crossed wall: ``{"id", "attenuation_db", "opening"}`` for the line p-q.
+
+    Each wall is ``{"id", "points_x", "points_y", "attenuation_db"}`` plus
+    optional ``opening_*`` arrays; a wall counts once however many of its
+    segments the line touches. Its `attenuation_db` is the loss for a square-on
+    pass, scaled up by the slant of the line through the first segment it hits.
+    When the line goes through one of the wall's doors or windows, that
+    opening's loss (`OPENING_ATTENUATION_DB`) is used instead and `opening`
+    names its type. A wall without an attenuation value counts as 0 dB.
+    """
+    details: list[dict[str, Any]] = []
+    for wall in walls:
+        xs: Sequence[float] = wall.get("points_x") or []
+        ys: Sequence[float] = wall.get("points_y") or []
+        points = list(zip(xs, ys, strict=False))
+        for i in range(len(points) - 1):
+            if segments_intersect(p, q, points[i], points[i + 1]):
+                factor = _segment_factor(p, q, points[i], points[i + 1])
+                opening = _opening_at(wall, _crossing_point(p, q, points[i], points[i + 1]))
+                base = (
+                    OPENING_ATTENUATION_DB[opening]
+                    if opening
+                    else float(wall.get("attenuation_db") or 0.0)
+                )
+                details.append(
+                    {"id": wall["id"], "attenuation_db": base * factor, "opening": opening}
+                )
+                break
+    return details
+
+
 def wall_crossings(
     p: tuple[float, float],
     q: tuple[float, float],
@@ -77,25 +149,11 @@ def wall_crossings(
 ) -> tuple[list[str], float]:
     """Return (crossed wall ids, summed attenuation in dB) for the line p-q.
 
-    Each wall is ``{"id", "points_x", "points_y", "attenuation_db"}`` with a
-    polyline geometry; a wall counts once however many of its segments the
-    line touches. Its `attenuation_db` is the loss for a square-on pass and is
-    scaled up by the slant of the line through the first segment it hits. A
-    wall without an attenuation value counts as 0 dB.
+    See :func:`wall_crossing_details` for how each wall (or the door/window it
+    passes through) is priced.
     """
-    crossed: list[str] = []
-    total_db = 0.0
-    for wall in walls:
-        xs: Sequence[float] = wall.get("points_x") or []
-        ys: Sequence[float] = wall.get("points_y") or []
-        points = list(zip(xs, ys, strict=False))
-        for i in range(len(points) - 1):
-            if segments_intersect(p, q, points[i], points[i + 1]):
-                crossed.append(wall["id"])
-                factor = _segment_factor(p, q, points[i], points[i + 1])
-                total_db += float(wall.get("attenuation_db") or 0.0) * factor
-                break
-    return crossed, total_db
+    details = wall_crossing_details(p, q, walls)
+    return [d["id"] for d in details], sum(d["attenuation_db"] for d in details)
 
 
 def slab_factor(distance: float, vertical: float) -> float:

@@ -53,6 +53,9 @@ Each link carries: `lqi`, `lqi_measured` (false when LQI is 0), `relationship_na
 floor height), `walls_crossed` + `wall_attenuation_db` (same floor), `slabs_crossed`
 + `slab_attenuation_db` (across floors), `free_space_loss_db`, `expected_loss_db`.
 Wall and slab loss are scaled up when the path crosses them at a slant, capped at 3x.
+A path that goes through a door or window drawn in the floor plan is priced as that
+opening (3 dB for a door, 2 dB for a window) instead of the wall around it;
+`openings_crossed` counts those (they are still part of `walls_crossed`).
 
 ## Reading the data correctly
 
