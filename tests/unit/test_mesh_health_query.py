@@ -136,3 +136,42 @@ async def test_weak_links_without_geometry_are_counted_in_a_warning() -> None:
 
     assert result["result"]["summary"]["unexplained_weak_links"] == 0
     assert any("could not be checked against the floor plan" in w for w in result["warnings"])
+
+
+def _pin(device_id, floor_id, level, x):
+    return {
+        "device_id": device_id,
+        "floor_id": floor_id,
+        "level": level,
+        "x": x,
+        "y": 0.0,
+        "z": 1.0,
+        "pins": 1,
+    }
+
+
+async def test_weak_cross_floor_link_is_not_unexplained_even_when_loss_estimate_is_low() -> None:
+    """A near-vertical link through one 15 dB slab stays under the loss
+    threshold, but the slab still explains it: it counts as cross-floor, not
+    as unexplained."""
+    near_vertical = _link("Up-A", "Down-B", 8, a="dev-c", b="dev-d")
+    same_floor = _link("Near-A", "Near-B", 10, a="dev-a", b="dev-b")
+    client = _client(
+        parents=[],
+        weak_devices=[],
+        coordinator=[],
+        links=[near_vertical, same_floor],
+        positions=[
+            _pin("dev-a", "f1", 1, 0.0),
+            _pin("dev-b", "f1", 1, 3.0),
+            _pin("dev-c", "f1", 1, 0.0),
+            _pin("dev-d", "f2", 2, 0.5),
+        ],
+    )
+
+    payload = (await mesh_health(client, slab_attenuation_db=15.0))["result"]
+
+    assert payload["summary"]["weak_links"] == 2
+    assert payload["summary"]["weak_cross_floor_links"] == 1
+    assert payload["summary"]["unexplained_weak_links"] == 1
+    assert [link["from_name"] for link in payload["unexplained_weak_links"]] == ["Near-A"]

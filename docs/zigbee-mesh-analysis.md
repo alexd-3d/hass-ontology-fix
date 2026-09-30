@@ -36,8 +36,10 @@ It returns, from the latest snapshot:
   usually means a dead or unreachable router that neighbors still list.
 - `weak_devices` - devices whose best measured neighbor is at or below `weak_lqi`.
 - `coordinator` - number, average and minimum LQI of the links that hear the coordinator.
-- `unexplained_weak_links` - weak measured links the floor plan does *not* explain
-  (short, lightly obstructed path). These are the ones worth investigating.
+- `unexplained_weak_links` - weak measured same-floor links the floor plan does *not*
+  explain (short, lightly obstructed path). These are the ones worth investigating.
+  Links through a floor slab are left out (the slab is the explanation) and only
+  counted in `summary.weak_cross_floor_links`.
 - `summary` counts, and `warnings` when some links could not be checked
   against the floor plan (a device is not pinned).
 

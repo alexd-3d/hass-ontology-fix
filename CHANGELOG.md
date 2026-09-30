@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.5.3
+
+### Fixed
+
+- `ontology.mesh_health` no longer reports weak links that pass through a floor slab as "unexplained": the slab is the explanation, even when the estimated loss for a near-vertical link is low. They are now counted separately in `summary.weak_cross_floor_links`.
+
 ## 4.5.2
 
 ### Changed
