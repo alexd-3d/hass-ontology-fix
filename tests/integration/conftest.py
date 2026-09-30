@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+import pytest_socket
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
@@ -57,6 +58,11 @@ def _wait_for_bolt_port(host: str, port: int, timeout: float = 30) -> None:
 
 @pytest.fixture(scope="session")
 def memgraph_container() -> DockerContainer:
+    # pytest-homeassistant-custom-component blocks sockets by default; this
+    # session fixture needs the Docker daemon / Bolt port. The plugin re-blocks
+    # sockets at the start of every test.
+    pytest_socket.enable_socket()
+    pytest_socket.socket_allow_hosts(["127.0.0.1", "localhost"], allow_unix_socket=True)
     container = DockerContainer(MEMGRAPH_IMAGE).with_exposed_ports(BOLT_PORT)
     container.start()
     wait_for_logs(container, "You are running Memgraph", timeout=60)
@@ -68,7 +74,9 @@ def memgraph_container() -> DockerContainer:
 
 
 @pytest_asyncio.fixture
-async def memgraph_client(memgraph_container: DockerContainer) -> AsyncGenerator[MemgraphClient]:
+async def memgraph_client(
+    memgraph_container: DockerContainer, socket_enabled: None
+) -> AsyncGenerator[MemgraphClient]:
     host = memgraph_container.get_container_host_ip()
     port = int(memgraph_container.get_exposed_port(BOLT_PORT))
     client = MemgraphClient(host=host, port=port)

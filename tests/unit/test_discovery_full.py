@@ -69,7 +69,12 @@ async def test_discovery_full_registries(hass, mock_memgraph_client) -> None:
     assert _merge_node_calls(mock_memgraph_client, "Device")
     assert _merge_node_calls(mock_memgraph_client, "Label")
     entity_calls = _merge_node_calls(mock_memgraph_client, "Entity")
-    assert any(call.args[1]["ha_id"] == entity_entry.entity_id for call in entity_calls)
+    # Full sync writes nodes in UNWIND batches (ON-023): ids live in params["rows"].
+    assert any(
+        row["ha_id"] == entity_entry.entity_id
+        for call in entity_calls
+        for row in call.args[1]["rows"]
+    )
 
     has_label_calls = [
         call
