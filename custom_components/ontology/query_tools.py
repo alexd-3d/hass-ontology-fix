@@ -985,8 +985,10 @@ async def mesh_health(
     - `weak_devices`: devices whose best measured neighbor is at or below
       `weak_lqi`.
     - `coordinator`: link count/quality of everything that hears the coordinator.
-    - `unexplained_weak_links`: measured links at or below `weak_lqi` that the
-      floor-plan geometry does not explain (short and lightly obstructed).
+    - `unexplained_weak_links`: measured same-floor links at or below `weak_lqi`
+      that the floor-plan geometry does not explain (short and lightly
+      obstructed). Links through a floor slab are excluded and only counted in
+      `summary.weak_cross_floor_links`.
     Reflects the last scan (nightly by default), not live state: cross-check
     a suspect device's Home Assistant availability before concluding it is dead.
     Empty (not an error) if no scan has run yet.
@@ -1044,10 +1046,16 @@ async def mesh_health(
         include_siblings=True,
     )
     weak_links = [link for link in walls["result"]["links"] if link["lqi_measured"]]
+    # A link through a floor slab is explained by the slab itself, however low
+    # the dB estimate (a near-vertical 15 dB slab stays under the threshold but
+    # still routinely costs far more LQI than the model says), so cross-floor
+    # links are reported separately rather than as unexplained.
+    cross_floor = [link for link in weak_links if link.get("slabs_crossed")]
     unexplained = [
         link
         for link in weak_links
-        if link["expected_loss_db"] is not None
+        if not link.get("slabs_crossed")
+        and link["expected_loss_db"] is not None
         and link["expected_loss_db"] <= _UNEXPLAINED_LOSS_DB
     ]
     unresolved = sum(1 for link in weak_links if link["expected_loss_db"] is None)
@@ -1087,6 +1095,7 @@ async def mesh_health(
             "weak_devices": len(weak_rows),
             "weak_links": len(weak_links),
             "unexplained_weak_links": len(unexplained),
+            "weak_cross_floor_links": len(cross_floor),
         },
         "suspect_parents": suspect_parents[:effective_limit],
         "parents": parents[:effective_limit],
