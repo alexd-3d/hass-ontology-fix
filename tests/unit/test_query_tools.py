@@ -32,7 +32,6 @@ from custom_components.ontology.const import (
     REL_ON_FLOOR,
     REL_PROVIDED_BY,
     REL_REFERENCES,
-    SCHEMA_VERSION,
 )
 from custom_components.ontology.redact import SECRET_KEYS
 
@@ -303,8 +302,11 @@ async def test_entity_context_reports_unavailable_relationships() -> None:
 
 def test_search_uses_only_v2_labels_and_relationships_no_new_schema() -> None:
     """T076: v3 introduces zero new Memgraph node labels/relationship types
-    or a `SCHEMA_VERSION` bump (FR-035, data-model.md §1)."""
-    assert SCHEMA_VERSION == "3.0.0"
+    (FR-035, data-model.md §1).
+
+    The original version also pinned ``SCHEMA_VERSION == "3.0.0"``; that only
+    held until the first later schema change, so it is no longer asserted.
+    """
     # Sanity: the v1/v2 label/relationship constants query_tools.py relies on
     # still exist and are unchanged in shape (no v3-specific LABEL_*/REL_*
     # constants were introduced for query_tools.py's own traversals).
