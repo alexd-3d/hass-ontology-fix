@@ -230,6 +230,41 @@ heading, and statistics graph cards require no additional frontend components.
 Entity IDs in the example are intentionally concise; update them if Home
 Assistant assigns different IDs to your Ontology entities.
 
+## Example questions
+
+What this is for in practice: the graph holds your registries, your floor plan (through the optional [ha-spatial-context](https://github.com/Greminn/ha-spatial-context)) and your Zigbee neighbour table in one place. Connected to an LLM through [MCP](#features) or Assist, it answers questions that would otherwise take many separate Home Assistant calls, quickly and from a single query. The numbers below come from a real installation; answers describe the last synchronization or nightly mesh scan, not live state.
+
+### Connectivity problems
+
+- **Is my Zigbee mesh healthy, and where do I start?** `ontology.mesh_health` in one call: routers, weak links, suspect parents and how well the coordinator hears the network (18 routers, 169 weak links, 2 suspect parents, coordinator hears 52 devices at an average LQI of 85).
+- **Which router is dead but still listed by its neighbours?** One whose child links are all unmeasured (LQI 0). Cross-check it in Home Assistant before calling it dead.
+- **Why is this link weak: distance, walls or a floor slab?** `ontology.mesh_link_walls` returns distance, walls crossed, wall and slab loss and expected loss per link (for example 10 m through 3 walls is about 73 dB expected).
+- **Does the angle matter, and do doors and windows count?** Yes. Each wall's loss is scaled up when the path crosses it at a slant, and a path through a drawn door (3 dB) or window (2 dB) pays that instead of the wall. Two links of similar length can differ by several dB for this reason alone.
+- **How much does a floor slab really cost?** Compare links at the same distance on one floor and across a slab. In one installation the average LQI was about 95 on a floor and about 40 through a slab, roughly 10 to 17 dB, in line with the 15 to 25 dB usually quoted for concrete. Set it with the `floor_slab_attenuation_db` option.
+- **Which weak links does the floor plan not explain?** `mesh_health` separates weak links explained by a slab from same-floor ones that geometry does not explain (short, lightly obstructed paths). The latter point to a local problem such as metal, tiles or interference.
+
+See [docs/zigbee-mesh-analysis.md](docs/zigbee-mesh-analysis.md) for how to read these results.
+
+### Structure and inventory
+
+- **What is in this home, in numbers?** Floors, areas, devices, entities and automations counted from one graph.
+- **What is in the kitchen, and on which floor?** `ontology.area_context` returns an area's floor, devices, entities and labels in one answer.
+- **Where is a device physically?** Placed devices have floor-plan coordinates and height; walls, doors and windows are stored too.
+
+### Impact and dependencies
+
+- **What breaks if I remove or rename this entity, device or area?** `ontology.impact_analysis` lists the automations, scenes, scripts and dashboard cards that reference it.
+- **Which automations depend on this sensor?** `ontology.automation_dependencies`.
+
+### Energy and health
+
+- **What is drawing power right now?** `ontology.active_consumers` ranks active consumers with their energy role.
+- **Which areas have low batteries?** `ontology.low_battery_areas`.
+- **Is the graph itself healthy?** Validation findings flag mistakes such as a floor with areas but no floor plan, or devices assigned to the wrong area.
+- **Anything else?** `ontology.query` runs a read-only Cypher query, for example the history of a link over the last nightly snapshots.
+
+Live values (is this on right now?) still come from Home Assistant directly.
+
 ## Development
 
 ```sh

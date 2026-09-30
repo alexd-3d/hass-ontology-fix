@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.2
+
+### Changed
+
+- README: new "Example questions" section showing what can be answered in one query when the graph is used with an LLM through MCP or Assist and ha-spatial-context, including Zigbee link-loss analysis with walls, angle, openings and floor slabs.
+
 ## 4.7.1
 
 ### Changed
