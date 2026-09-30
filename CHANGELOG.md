@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.6.0
+
+### Added
+
+- **Doors and windows on walls.** When `ha-spatial-context` has doors or windows drawn on a wall, the floor-plan sync now stores them on the `Wall` node as parallel arrays: `opening_types`, `opening_x`, `opening_y` (centre on the wall) and `opening_width`, all in metres. Openings removed in the plugin are cleared on the next sync; floors that are not calibrated (no metres) are skipped. This only stores the data; signal-loss estimates do not use it yet.
+
 ## 4.5.3
 
 ### Fixed

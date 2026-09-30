@@ -39,6 +39,29 @@ from .memgraph_client import MemgraphClient
 _LOGGER = logging.getLogger(__name__)
 
 
+def _opening_arrays(wall: dict[str, Any]) -> dict[str, list[Any]]:
+    """Doors/windows on a wall as parallel arrays (same reason as points_x/y).
+
+    ``x``/``y`` is the opening's centre on the wall, ``width`` its extent along
+    the wall, all in metres. Openings the plugin couldn't convert to metres
+    (floor not calibrated) are skipped. Always returns the four keys, empty
+    when there are none, so openings removed in the plugin also clear here.
+    """
+    openings = [
+        opening
+        for opening in wall.get("openings") or []
+        if opening.get("x_m") is not None
+        and opening.get("y_m") is not None
+        and opening.get("width_m") is not None
+    ]
+    return {
+        "opening_types": [opening.get("type") for opening in openings],
+        "opening_x": [opening["x_m"] for opening in openings],
+        "opening_y": [opening["y_m"] for opening in openings],
+        "opening_width": [opening["width_m"] for opening in openings],
+    }
+
+
 def spatial_context_available(hass: HomeAssistant) -> bool:
     """Whether the optional spatial_context integration is installed and loaded."""
     return hass.services.has_service(SPATIAL_CONTEXT_DOMAIN, SPATIAL_CONTEXT_GET_MAP_SERVICE)
@@ -124,6 +147,7 @@ async def async_sync_spatial_layout(
                     "attenuation_db": wall.get("attenuation_db"),
                     "points_x": [point[0] for point in points_m],
                     "points_y": [point[1] for point in points_m],
+                    **_opening_arrays(wall),
                 },
             )
             await merge_relationship(
