@@ -11,8 +11,6 @@ from homeassistant.core import SupportsResponse
 
 from custom_components.ontology import spatial_sync
 from custom_components.ontology.const import (
-    LABEL_ENTITY,
-    LABEL_FLOOR,
     LABEL_WALL,
     REL_ON_FLOOR,
     REL_PINNED_ON_FLOOR,
@@ -125,3 +123,98 @@ async def test_sync_spatial_layout_merges_walls_and_pins_no_room(
 
     assert not any("Room" in q for q, _p in queries_and_params)
     assert not any(p.get("from_ha_id") == "orphan-pin" for _q, p in queries_and_params)
+
+
+def _wall_properties(mock_memgraph_client, wall_id: str) -> dict:
+    for call in mock_memgraph_client.run_query_with_retry.call_args_list:
+        query, params = call.args
+        if f"MERGE (n:{LABEL_WALL}" in query and params["ha_id"] == wall_id:
+            return params["properties"]
+    raise AssertionError(f"wall {wall_id} was not written")
+
+
+def _wall_with_openings(openings):
+    return {
+        "floors": [
+            {
+                "floor_id": "drugii",
+                "rooms": [],
+                "walls": [
+                    {
+                        "id": "wall-o",
+                        "material": "ceramic_poroton_block",
+                        "thickness_cm": 25,
+                        "attenuation_db": 10.5,
+                        "points_m": [[0.9, 1.4], [7.5, 1.4]],
+                        "openings": openings,
+                    }
+                ],
+            }
+        ]
+    }
+
+
+async def test_wall_openings_are_stored_as_parallel_metre_arrays(
+    hass, mock_memgraph_client
+) -> None:
+    _register_fake_spatial_context_service(
+        hass,
+        _wall_with_openings(
+            [
+                {"type": "window", "x_m": 2.5, "y_m": 1.4, "width_m": 1.9},
+                {"type": "door", "x_m": 5.0, "y_m": 1.4, "width_m": 0.8},
+            ]
+        ),
+    )
+
+    await spatial_sync.async_sync_spatial_layout(hass, mock_memgraph_client)
+
+    props = _wall_properties(mock_memgraph_client, "wall-o")
+    assert props["opening_types"] == ["window", "door"]
+    assert props["opening_x"] == [2.5, 5.0]
+    assert props["opening_y"] == [1.4, 1.4]
+    assert props["opening_width"] == [1.9, 0.8]
+
+
+async def test_openings_without_metres_are_skipped(hass, mock_memgraph_client) -> None:
+    """An uncalibrated floor yields x_m/y_m/width_m = None; don't store nulls."""
+    _register_fake_spatial_context_service(
+        hass,
+        _wall_with_openings(
+            [
+                {"type": "window", "x_m": None, "y_m": None, "width_m": None},
+                {"type": "door", "x_m": 5.0, "y_m": 1.4, "width_m": 0.8},
+            ]
+        ),
+    )
+
+    await spatial_sync.async_sync_spatial_layout(hass, mock_memgraph_client)
+
+    props = _wall_properties(mock_memgraph_client, "wall-o")
+    assert props["opening_types"] == ["door"]
+    assert props["opening_width"] == [0.8]
+
+
+async def test_wall_without_openings_writes_empty_arrays_so_removals_propagate(
+    hass, mock_memgraph_client
+) -> None:
+    _register_fake_spatial_context_service(hass, _wall_with_openings([]))
+
+    await spatial_sync.async_sync_spatial_layout(hass, mock_memgraph_client)
+
+    props = _wall_properties(mock_memgraph_client, "wall-o")
+    for key in ("opening_types", "opening_x", "opening_y", "opening_width"):
+        assert props[key] == []
+
+
+async def test_older_plugin_without_openings_key_still_syncs(
+    hass, mock_memgraph_client
+) -> None:
+    payload = _wall_with_openings([])
+    del payload["floors"][0]["walls"][0]["openings"]
+    _register_fake_spatial_context_service(hass, payload)
+
+    result = await spatial_sync.async_sync_spatial_layout(hass, mock_memgraph_client)
+
+    assert result["walls"] == 1
+    assert _wall_properties(mock_memgraph_client, "wall-o")["opening_types"] == []
