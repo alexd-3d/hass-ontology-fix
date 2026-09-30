@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import CoreState, Event
@@ -13,29 +13,30 @@ from custom_components.ontology.event_listener import (
     StateChangeDebouncer,
     async_register_listeners,
 )
+from tests.unit.event_listener_helpers import make_coordinator
 
 
 async def test_registered_listener_ignores_startup_state_churn(hass) -> None:
-    coordinator = AsyncMock()
+    coordinator = make_coordinator()
 
     with patch("custom_components.ontology.event_listener.STATE_CHANGE_DEBOUNCE_SECONDS", 0.01):
         unsubscribe = async_register_listeners(hass, coordinator)
         hass.set_state(CoreState.starting)
         hass.states.async_set("sensor.startup", "on")
         await asyncio.sleep(0.02)
-        coordinator.async_handle_entity_change.assert_not_awaited()
+        coordinator.async_handle_entity_changes_batch.assert_not_awaited()
 
         hass.set_state(CoreState.running)
         hass.states.async_set("sensor.startup", "off")
         await asyncio.sleep(0.02)
         await hass.async_block_till_done()
 
-    coordinator.async_handle_entity_change.assert_awaited_once()
+    coordinator.async_handle_entity_changes_batch.assert_awaited_once()
     unsubscribe()
 
 
 async def test_registered_listener_ignores_startup_registry_churn(hass) -> None:
-    coordinator = AsyncMock()
+    coordinator = make_coordinator()
     unsubscribe = async_register_listeners(hass, coordinator)
 
     hass.set_state(CoreState.starting)
@@ -52,7 +53,7 @@ async def test_registered_listener_ignores_startup_registry_churn(hass) -> None:
 
 
 async def test_unrelated_attribute_only_change_is_ignored(hass) -> None:
-    coordinator = AsyncMock()
+    coordinator = make_coordinator()
     debouncer = StateChangeDebouncer(hass, coordinator)
 
     hass.states.async_set("sensor.battery_device", "on", {"battery_level": 80})
@@ -75,12 +76,12 @@ async def test_unrelated_attribute_only_change_is_ignored(hass) -> None:
             )
         )
 
-    assert debouncer._timers == {}
-    coordinator.async_handle_entity_change.assert_not_called()
+    assert debouncer._timer is None
+    coordinator.async_handle_entity_changes_batch.assert_not_called()
 
 
 async def test_measurement_attribute_only_change_is_accepted(hass) -> None:
-    coordinator = AsyncMock()
+    coordinator = make_coordinator()
     debouncer = StateChangeDebouncer(hass, coordinator)
     hass.states.async_set(
         "sensor.power", "10", {"device_class": "power", "unit_of_measurement": "W"}
@@ -106,13 +107,13 @@ async def test_measurement_attribute_only_change_is_accepted(hass) -> None:
         )
         await asyncio.sleep(0.02)
 
-    context = coordinator.async_handle_entity_change.call_args.args[1]
+    context = coordinator.async_handle_entity_changes_batch.call_args.args[0]["sensor.power"]
     assert context.state is new_state
     assert context.measurement_last_updated == new_state.last_updated
 
 
 async def test_unrelated_churn_retains_accepted_snapshot_and_timer(hass) -> None:
-    coordinator = AsyncMock()
+    coordinator = make_coordinator()
     debouncer = StateChangeDebouncer(hass, coordinator)
     hass.states.async_set(
         "sensor.power", "10", {"device_class": "power", "unit_of_measurement": "W"}
@@ -136,7 +137,7 @@ async def test_unrelated_churn_retains_accepted_snapshot_and_timer(hass) -> None
                 },
             )
         )
-        retained_handle = debouncer._timers["sensor.power"]
+        retained_handle = debouncer._timer
         hass.states.async_set(
             "sensor.power",
             "11",
@@ -154,15 +155,15 @@ async def test_unrelated_churn_retains_accepted_snapshot_and_timer(hass) -> None
                 },
             )
         )
-        assert debouncer._timers["sensor.power"] is retained_handle
+        assert debouncer._timer is retained_handle
         await asyncio.sleep(0.04)
 
-    context = coordinator.async_handle_entity_change.call_args.args[1]
+    context = coordinator.async_handle_entity_changes_batch.call_args.args[0]["sensor.power"]
     assert context.state is accepted_state
 
 
 async def test_friendly_name_change_syncs_without_advancing_measurement_time(hass) -> None:
-    coordinator = AsyncMock()
+    coordinator = make_coordinator()
     debouncer = StateChangeDebouncer(hass, coordinator)
     hass.states.async_set(
         "sensor.power",
@@ -200,13 +201,13 @@ async def test_friendly_name_change_syncs_without_advancing_measurement_time(has
         )
         await asyncio.sleep(0.02)
 
-    context = coordinator.async_handle_entity_change.call_args.args[1]
+    context = coordinator.async_handle_entity_changes_batch.call_args.args[0]["sensor.power"]
     assert context.state is new_state
     assert context.measurement_last_updated == old_state.last_updated
 
 
 async def test_missing_new_state_is_ignored(hass) -> None:
-    coordinator = AsyncMock()
+    coordinator = make_coordinator()
     debouncer = StateChangeDebouncer(hass, coordinator)
 
     debouncer.async_handle_state_changed(
@@ -216,12 +217,12 @@ async def test_missing_new_state_is_ignored(hass) -> None:
         )
     )
 
-    assert debouncer._timers == {}
-    coordinator.async_handle_entity_change.assert_not_called()
+    assert debouncer._timer is None
+    coordinator.async_handle_entity_changes_batch.assert_not_called()
 
 
 async def test_actual_state_change_is_not_ignored(hass) -> None:
-    coordinator = AsyncMock()
+    coordinator = make_coordinator()
     debouncer = StateChangeDebouncer(hass, coordinator)
 
     hass.states.async_set("sensor.actual_change", "on")
@@ -244,7 +245,8 @@ async def test_actual_state_change_is_not_ignored(hass) -> None:
             )
         )
 
-    assert "sensor.actual_change" in debouncer._timers
+    assert "sensor.actual_change" in debouncer._pending
+    assert debouncer._timer is not None
     debouncer.async_cancel_all()
 
 
@@ -254,8 +256,8 @@ async def test_coordinator_outage_does_not_block_listener(hass) -> None:
     async def stalled_update(*_args: object) -> None:
         await release_coordinator.wait()
 
-    coordinator = AsyncMock()
-    coordinator.async_handle_entity_change.side_effect = stalled_update
+    coordinator = make_coordinator()
+    coordinator.async_handle_entity_changes_batch.side_effect = stalled_update
     debouncer = StateChangeDebouncer(hass, coordinator)
 
     hass.states.async_set("sensor.power", "10")
@@ -279,7 +281,7 @@ async def test_coordinator_outage_does_not_block_listener(hass) -> None:
             )
         )
         await asyncio.sleep(0.02)
-        assert coordinator.async_handle_entity_change.await_count == 1
+        assert coordinator.async_handle_entity_changes_batch.await_count == 1
 
         hass.states.async_set("sensor.other", "on")
         other_state = hass.states.get("sensor.other")
@@ -293,7 +295,7 @@ async def test_coordinator_outage_does_not_block_listener(hass) -> None:
                 },
             )
         )
-        assert "sensor.other" in debouncer._timers
+        assert "sensor.other" in debouncer._pending
 
     release_coordinator.set()
     debouncer.async_cancel_all()
