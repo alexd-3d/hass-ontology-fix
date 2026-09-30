@@ -70,7 +70,7 @@ from .const import (
     SOURCE_USER,
 )
 from .memgraph_client import MemgraphClient
-from .mesh_geometry import distance_m, free_space_loss_db, slab_factor, wall_crossings
+from .mesh_geometry import distance_m, free_space_loss_db, slab_factor, wall_crossing_details
 from .redact import redact_value
 
 _NO_DEPENDENCIES_WARNING = "no known dependencies found"
@@ -823,7 +823,10 @@ async def mesh_link_walls(
     Both endpoint devices must resolve to a
     Device node with a floor-plan pin. On the same floor, wall crossings are
     counted from the floor-plan geometry, each wall's `attenuation_db` scaled
-    up when the path crosses it at a slant. Across floors, the number of slabs
+    up when the path crosses it at a slant. A crossing that goes through a
+    door or window drawn on that wall is priced as the opening (3 dB door,
+    2 dB window) instead of the wall and counted in `openings_crossed`
+    (still included in `walls_crossed`). Across floors, the number of slabs
     is the difference in floor level (each adding `slab_attenuation_db`,
     scaled up by the slant of the path) and the distance includes
     `floor_height_m` per floor plus the pins' heights; wall crossings are not
@@ -887,7 +890,9 @@ async def mesh_link_walls(
         for wall in await client.run_query(
             f"MATCH (w:{LABEL_WALL})-[:{REL_ON_FLOOR}]->(f:{LABEL_FLOOR}) "
             "RETURN w.ha_id AS id, f.ha_id AS floor_id, w.points_x AS points_x, "
-            "w.points_y AS points_y, w.attenuation_db AS attenuation_db",
+            "w.points_y AS points_y, w.attenuation_db AS attenuation_db, "
+            "w.opening_types AS opening_types, w.opening_x AS opening_x, "
+            "w.opening_y AS opening_y, w.opening_width AS opening_width",
             {},
         ):
             walls_by_floor.setdefault(wall["floor_id"], []).append(wall)
@@ -907,6 +912,7 @@ async def mesh_link_walls(
             "same_floor": None,
             "distance_m": None,
             "walls_crossed": None,
+            "openings_crossed": None,
             "wall_attenuation_db": None,
             "slabs_crossed": None,
             "slab_attenuation_db": None,
@@ -920,9 +926,11 @@ async def mesh_link_walls(
             to_floor, to_level, tx, ty, tz = to_pos
             link["same_floor"] = from_floor == to_floor
             if link["same_floor"]:
-                crossed, total_db = wall_crossings(
+                crossed = wall_crossing_details(
                     (fx, fy), (tx, ty), walls_by_floor.get(from_floor, [])
                 )
+                total_db = sum(d["attenuation_db"] for d in crossed)
+                link["openings_crossed"] = sum(1 for d in crossed if d["opening"])
                 link["distance_m"] = round(distance_m((fx, fy, fz), (tx, ty, tz)), 2)
                 link["walls_crossed"] = len(crossed)
                 link["wall_attenuation_db"] = round(total_db, 1)
