@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.5.2
+
+### Changed
+
+- A full sync (startup, manual resync) now writes floors, areas, devices, labels and entities, with their relationships, to the graph in batches instead of one query per node and edge. The resulting graph is unchanged; large homes spend far fewer round trips per full sync.
+
 ## 4.5.1
 
 ### Changed

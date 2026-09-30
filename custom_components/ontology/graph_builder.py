@@ -200,6 +200,63 @@ async def merge_relationship(
     )
 
 
+_BULK_BATCH_SIZE = 250
+
+
+def _chunks(rows: list[Any]) -> list[list[Any]]:
+    return [rows[i : i + _BULK_BATCH_SIZE] for i in range(0, len(rows), _BULK_BATCH_SIZE)]
+
+
+async def merge_nodes_bulk(
+    client: MemgraphClient,
+    label: str,
+    nodes: list[tuple[str, dict[str, Any]]],
+    source: str = SOURCE_HOME_ASSISTANT,
+) -> None:
+    """Bulk form of :func:`merge_node`: one ``UNWIND`` query per batch of nodes."""
+    label = _sanitize_label(label)
+    now = _now_iso()
+    rows = [
+        {"ha_id": ha_id, "properties": {**props, "source": source, "updated_at": now}}
+        for ha_id, props in nodes
+    ]
+    query = (
+        "UNWIND $rows AS row "
+        f"MERGE (n:{label} {{ha_id: row.ha_id}}) "
+        "SET n += row.properties"
+    )
+    for chunk in _chunks(rows):
+        await client.run_query_with_retry(query, {"rows": chunk})
+
+
+async def merge_relationships_bulk(
+    client: MemgraphClient,
+    from_label: str,
+    rel_type: str,
+    to_label: str,
+    pairs: list[tuple[str, str]],
+    source: str = SOURCE_HOME_ASSISTANT,
+) -> None:
+    """Bulk form of :func:`merge_relationship` (``MATCH`` semantics: pairs whose
+    endpoints don't exist are silently skipped, same as the single-row helper)."""
+    from_label = _sanitize_label(from_label)
+    to_label = _sanitize_label(to_label)
+    rel_type = _sanitize_label(rel_type)
+    query = (
+        "UNWIND $rows AS row "
+        f"MATCH (a:{from_label} {{ha_id: row.from_id}}), "
+        f"(b:{to_label} {{ha_id: row.to_id}}) "
+        f"MERGE (a)-[r:{rel_type}]->(b) "
+        "SET r.source = $source, r.updated_at = $updated_at"
+    )
+    now = _now_iso()
+    rows = [{"from_id": from_id, "to_id": to_id} for from_id, to_id in pairs]
+    for chunk in _chunks(rows):
+        await client.run_query_with_retry(
+            query, {"rows": chunk, "source": source, "updated_at": now}
+        )
+
+
 # ---------------------------------------------------------------------------
 # Discovery (User Story 3): read HA registries, write nodes/relationships.
 # Every optional relationship (Area<->Floor, Device<->Area, Entity<->Device,
@@ -215,74 +272,76 @@ async def ensure_home_node(client: MemgraphClient) -> None:
 
 async def collect_floors(hass: HomeAssistant, client: MemgraphClient) -> list[str]:
     """Discover HA floors (optional registry, FR-006). Returns discovered ids."""
-    registry = fr.async_get(hass)
-    floor_ids: list[str] = []
-    for floor in registry.async_list_floors():
-        await merge_node(
-            client,
-            LABEL_FLOOR,
-            floor.floor_id,
-            {"name": floor.name, "level": floor.level, "icon": floor.icon},
-        )
-        await merge_relationship(
-            client, LABEL_HOME, HOME_SINGLETON_ID, REL_HAS_FLOOR, LABEL_FLOOR, floor.floor_id
-        )
-        floor_ids.append(floor.floor_id)
-    return floor_ids
+    floors = list(fr.async_get(hass).async_list_floors())
+    await merge_nodes_bulk(
+        client,
+        LABEL_FLOOR,
+        [(f.floor_id, {"name": f.name, "level": f.level, "icon": f.icon}) for f in floors],
+    )
+    await merge_relationships_bulk(
+        client,
+        LABEL_HOME,
+        REL_HAS_FLOOR,
+        LABEL_FLOOR,
+        [(HOME_SINGLETON_ID, f.floor_id) for f in floors],
+    )
+    return [f.floor_id for f in floors]
 
 
 async def collect_areas(hass: HomeAssistant, client: MemgraphClient) -> list[str]:
     """Discover HA areas; may exist with no floor (FR-006). Returns discovered ids."""
-    registry = ar.async_get(hass)
-    area_ids: list[str] = []
-    for area in registry.async_list_areas():
-        await merge_node(client, LABEL_AREA, area.id, {"name": area.name, "icon": area.icon})
-        await merge_relationship(
-            client, LABEL_HOME, HOME_SINGLETON_ID, REL_HAS_AREA, LABEL_AREA, area.id
-        )
-        floor_id = getattr(area, "floor_id", None)
-        if floor_id:
-            await merge_relationship(
-                client, LABEL_AREA, area.id, REL_ON_FLOOR, LABEL_FLOOR, floor_id
-            )
-        else:
-            _LOGGER.debug("Area %s has no floor assigned; skipping ON_FLOOR", area.id)
-        area_ids.append(area.id)
-    return area_ids
+    areas = list(ar.async_get(hass).async_list_areas())
+    await merge_nodes_bulk(
+        client, LABEL_AREA, [(a.id, {"name": a.name, "icon": a.icon}) for a in areas]
+    )
+    await merge_relationships_bulk(
+        client, LABEL_HOME, REL_HAS_AREA, LABEL_AREA, [(HOME_SINGLETON_ID, a.id) for a in areas]
+    )
+    await merge_relationships_bulk(
+        client,
+        LABEL_AREA,
+        REL_ON_FLOOR,
+        LABEL_FLOOR,
+        [(a.id, a.floor_id) for a in areas if getattr(a, "floor_id", None)],
+    )
+    return [a.id for a in areas]
 
 
 async def collect_devices(hass: HomeAssistant, client: MemgraphClient) -> list[str]:
     """Discover HA devices; may exist with no area (FR-006). Returns discovered ids."""
-    registry = dr.async_get(hass)
-    device_ids: list[str] = []
-    for device in registry.devices.values():
-        name = device.name_by_user or device.name
-        await merge_node(
-            client,
-            LABEL_DEVICE,
-            device.id,
-            {"name": name, "manufacturer": device.manufacturer, "model": device.model},
-        )
-        if device.area_id:
-            await merge_relationship(
-                client, LABEL_AREA, device.area_id, REL_HAS_DEVICE, LABEL_DEVICE, device.id
+    devices = list(dr.async_get(hass).devices.values())
+    await merge_nodes_bulk(
+        client,
+        LABEL_DEVICE,
+        [
+            (
+                d.id,
+                {
+                    "name": d.name_by_user or d.name,
+                    "manufacturer": d.manufacturer,
+                    "model": d.model,
+                },
             )
-        else:
-            _LOGGER.debug("Device %s has no area assigned; skipping HAS_DEVICE", device.id)
-        device_ids.append(device.id)
-    return device_ids
+            for d in devices
+        ],
+    )
+    await merge_relationships_bulk(
+        client,
+        LABEL_AREA,
+        REL_HAS_DEVICE,
+        LABEL_DEVICE,
+        [(d.area_id, d.id) for d in devices if d.area_id],
+    )
+    return [d.id for d in devices]
 
 
 async def collect_labels(hass: HomeAssistant, client: MemgraphClient) -> list[str]:
     """Discover HA labels (optional registry, FR-006). Returns discovered ids."""
-    registry = lr.async_get(hass)
-    label_ids: list[str] = []
-    for label in registry.async_list_labels():
-        await merge_node(
-            client, LABEL_LABEL, label.label_id, {"name": label.name, "color": label.color}
-        )
-        label_ids.append(label.label_id)
-    return label_ids
+    labels = list(lr.async_get(hass).async_list_labels())
+    await merge_nodes_bulk(
+        client, LABEL_LABEL, [(lb.label_id, {"name": lb.name, "color": lb.color}) for lb in labels]
+    )
+    return [lb.label_id for lb in labels]
 
 
 async def collect_entities(
@@ -295,37 +354,101 @@ async def collect_entities(
     Returns (entity_ids, discovered_domains, discovered_integrations).
     """
     registry = er.async_get(hass)
-    entity_ids: list[str] = []
-    domains: set[str] = set()
-    integrations: set[str] = set()
-    for entity in registry.entities.values():
-        if entity.platform == DOMAIN:
-            # Skip the integration's own diagnostic sensors/buttons: syncing
-            # our own churn (health/node-count updates on every sync) back
-            # into the graph is noise, and previously left stale duplicate
-            # Entity nodes behind when HA renamed them (e.g. sensor.health_3)
-            # after a config-entry collision.
-            continue
-        await _write_entity_node_and_relationships(hass, client, entity.entity_id)
-        domains.add(entity.entity_id.split(".", 1)[0])
-        if entity.platform:
-            integrations.add(entity.platform)
-        entity_ids.append(entity.entity_id)
-    return entity_ids, domains, integrations
+    entries = [
+        entry
+        for entry in registry.entities.values()
+        # Skip the integration's own diagnostic sensors/buttons: syncing
+        # our own churn (health/node-count updates on every sync) back
+        # into the graph is noise, and previously left stale duplicate
+        # Entity nodes behind when HA renamed them (e.g. sensor.health_3)
+        # after a config-entry collision.
+        if entry.platform != DOMAIN
+    ]
+    entity_rows: list[dict[str, Any]] = []
+    for entry in entries:
+        props, measurement_props = _entity_node_properties(hass, entry.entity_id)
+        entity_rows.append(
+            {
+                "ha_id": entry.entity_id,
+                "properties": props,
+                "measurement_properties": measurement_props,
+            }
+        )
+    for chunk in _chunks(entity_rows):
+        await client.run_query_with_retry(_ENTITY_BULK_QUERY, {"rows": chunk})
+
+    domains = {entry.entity_id.split(".", 1)[0] for entry in entries}
+    integrations = {entry.platform for entry in entries if entry.platform}
+    await merge_nodes_bulk(client, LABEL_DOMAIN, [(d, {}) for d in sorted(domains)])
+    await merge_nodes_bulk(
+        client, LABEL_INTEGRATION, [(i, {"name": i}) for i in sorted(integrations)]
+    )
+
+    await merge_relationships_bulk(
+        client,
+        LABEL_ENTITY,
+        REL_IN_DOMAIN,
+        LABEL_DOMAIN,
+        [(e.entity_id, e.entity_id.split(".", 1)[0]) for e in entries],
+    )
+    await merge_relationships_bulk(
+        client,
+        LABEL_DEVICE,
+        REL_HAS_ENTITY,
+        LABEL_ENTITY,
+        [(e.device_id, e.entity_id) for e in entries if e.device_id],
+    )
+    for chunk in _chunks([e.entity_id for e in entries]):
+        await client.run_query_with_retry(
+            "UNWIND $ids AS id "
+            f"MATCH (e:{LABEL_ENTITY} {{ha_id: id}})-[r:{REL_HAS_AREA}]->(:{LABEL_AREA}) "
+            "WHERE r.source = $source DELETE r",
+            {"ids": chunk, "source": SOURCE_HOME_ASSISTANT},
+        )
+    await merge_relationships_bulk(
+        client,
+        LABEL_ENTITY,
+        REL_HAS_AREA,
+        LABEL_AREA,
+        [(e.entity_id, e.area_id) for e in entries if e.area_id],
+    )
+    await merge_relationships_bulk(
+        client,
+        LABEL_ENTITY,
+        REL_PROVIDED_BY,
+        LABEL_INTEGRATION,
+        [(e.entity_id, e.platform) for e in entries if e.platform],
+    )
+    await merge_relationships_bulk(
+        client,
+        LABEL_ENTITY,
+        REL_HAS_LABEL,
+        LABEL_LABEL,
+        [(e.entity_id, label_id) for e in entries for label_id in e.labels or ()],
+    )
+    return [e.entity_id for e in entries], domains, integrations
 
 
-async def _write_entity_node_and_relationships(
+_ENTITY_BULK_QUERY = (
+    "UNWIND $rows AS row "
+    f"MERGE (n:{LABEL_ENTITY} {{ha_id: row.ha_id}}) "
+    f"REMOVE n.{MEASUREMENT_KIND}, n.{MEASUREMENT_STATUS}, "
+    f"n.{MEASUREMENT_BATTERY_PERCENTAGE}, n.{MEASUREMENT_POWER_WATTS}, "
+    f"n.{MEASUREMENT_LAST_UPDATED}, n.{MEASUREMENT_LAST_UPDATED_EPOCH} "
+    "SET n += row.properties, n += row.measurement_properties"
+)
+
+
+def _entity_node_properties(
     hass: HomeAssistant,
-    client: MemgraphClient,
     entity_id: str,
     context: EntitySyncContext | None = None,
-) -> None:
-    """Write the Entity node and its Device/Domain/Integration/Label edges."""
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Properties for an Entity node: (base properties, measurement properties)."""
     registry = er.async_get(hass)
     entry = registry.entities.get(entity_id)
     state = context.state if context is not None else hass.states.get(entity_id)
     name = (entry.name if entry else None) or (state.name if state else None) or entity_id
-    domain = entity_id.split(".", 1)[0]
 
     props: dict[str, Any] = {"name": name}
     if entry is not None:
@@ -349,6 +472,20 @@ async def _write_entity_node_and_relationships(
     )
     props["source"] = SOURCE_HOME_ASSISTANT
     props["updated_at"] = _now_iso()
+    return props, measurement_props
+
+
+async def _write_entity_node_and_relationships(
+    hass: HomeAssistant,
+    client: MemgraphClient,
+    entity_id: str,
+    context: EntitySyncContext | None = None,
+) -> None:
+    """Write the Entity node and its Device/Domain/Integration/Label edges."""
+    registry = er.async_get(hass)
+    entry = registry.entities.get(entity_id)
+    domain = entity_id.split(".", 1)[0]
+    props, measurement_props = _entity_node_properties(hass, entity_id, context)
     await client.run_query_with_retry(
         f"MERGE (n:{LABEL_ENTITY} {{ha_id: $ha_id}}) "
         f"REMOVE n.{MEASUREMENT_KIND}, n.{MEASUREMENT_STATUS}, "
