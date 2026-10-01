@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 from neo4j import AsyncDriver, AsyncGraphDatabase, AsyncManagedTransaction, Record
-from neo4j.exceptions import AuthError, ServiceUnavailable
+from neo4j.exceptions import AuthError, ServiceUnavailable, TransientError
 from neo4j.graph import Node, Path, Relationship
 
 from .const import (
@@ -234,7 +234,8 @@ class MemgraphClient:
     ) -> list[dict[str, Any]]:
         """Run a query with exponential backoff retry (research.md §6).
 
-        Retries transient connectivity failures up to ``RETRY_MAX_ATTEMPTS``
+        Retries transient connectivity failures and transaction conflicts
+        (Memgraph's ``TransientError``) up to ``RETRY_MAX_ATTEMPTS``
         times, doubling the delay each time up to ``RETRY_MAX_DELAY_SECONDS``.
         Re-raises the last failure once attempts are exhausted so the caller
         (coordinator) can mark the operation failed/pending rather than
@@ -245,7 +246,7 @@ class MemgraphClient:
         for attempt in range(1, RETRY_MAX_ATTEMPTS + 1):
             try:
                 return await self.run_query(query, parameters)
-            except (CannotConnect, ServiceUnavailable, TimeoutError) as err:
+            except (CannotConnect, ServiceUnavailable, TimeoutError, TransientError) as err:
                 last_error = err
                 _LOGGER.debug(
                     "Memgraph query attempt %s/%s failed: %s",

@@ -21,7 +21,6 @@ from typing import Any
 
 from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
 
 from .const import (
     LABEL_DEVICE,
@@ -34,6 +33,7 @@ from .const import (
     ZIGBEE2MQTT_NETWORKMAP_REQUEST_TOPIC_SUFFIX,
     ZIGBEE2MQTT_NETWORKMAP_RESPONSE_TOPIC_SUFFIX,
 )
+from .device_registry_compat import iter_devices
 from .graph_builder import merge_node
 from .memgraph_client import MemgraphClient
 
@@ -59,7 +59,7 @@ def _coordinator_ieee(payload: dict[str, Any]) -> str | None:
 def _ieee_to_device_ids(hass: HomeAssistant) -> dict[str, str]:
     """Map Zigbee IEEE address -> HA device id via the MQTT discovery identifiers."""
     mapping: dict[str, str] = {}
-    for device in dr.async_get(hass).devices.values():
+    for device in iter_devices(hass):
         for domain, identifier in device.identifiers:
             if domain != MQTT_DOMAIN or not isinstance(identifier, str):
                 continue

@@ -5,6 +5,13 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.3
+
+### Fixed
+
+- Home Assistant no longer logs deprecation warnings about the device registry. The integration now looks up and lists devices through the supported registry calls, so it keeps working when Home Assistant 2027.9.0 removes the old access.
+- A Memgraph transaction conflict ("Cannot resolve conflicting transactions") during a resync is now retried like other temporary failures instead of aborting the sync and leaving an unhandled task error in the log.
+
 ## 4.7.2
 
 ### Changed

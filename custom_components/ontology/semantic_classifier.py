@@ -19,7 +19,6 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
@@ -49,6 +48,7 @@ from .const import (
     SOURCE_GENERATED,
     SOURCE_INFERRED,
 )
+from .device_registry_compat import get_device
 from .graph_builder import merge_node, merge_relationship
 from .memgraph_client import MemgraphClient
 
@@ -178,7 +178,7 @@ def _entity_signals(hass: HomeAssistant, entity_id: str) -> dict[str, Any]:
         if area is not None:
             area_name = area.name or ""
     if entry is not None and entry.device_id:
-        device = dr.async_get(hass).devices.get(entry.device_id)
+        device = get_device(hass, entry.device_id)
         if device is not None:
             device_name = device.name_by_user or device.name or ""
             # ON-011: manufacturer-based matching signal (e.g. LABEL_CAMERA)
@@ -206,7 +206,7 @@ def _resolve_area_id(hass: HomeAssistant, entity_id: str) -> str | None:
     if entry.area_id:
         return entry.area_id
     if entry.device_id:
-        device = dr.async_get(hass).devices.get(entry.device_id)
+        device = get_device(hass, entry.device_id)
         if device is not None:
             return device.area_id
     return None
