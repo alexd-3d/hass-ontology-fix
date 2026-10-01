@@ -11,7 +11,6 @@ from custom_components.ontology.const import (
     DOMAIN,
     ENERGY_ROLE_CONSUMER,
     ENERGY_ROLE_PRODUCER,
-    OUTCOME_EMPTY,
     OUTCOME_OK,
     SOURCE_INFERRED,
     SOURCE_USER,
@@ -161,8 +160,10 @@ async def test_active_consumers_uses_effective_roles_and_real_relationships(
     )
     overridden_result = await active_consumers(memgraph_client)
 
-    assert overridden_result["outcome"] == OUTCOME_EMPTY
-    assert overridden_result["result"]["consumers"] == []
+    # The user override takes the dishwasher out of the consumers; the geyser
+    # (still an inferred consumer) remains, so the result is not empty.
+    assert overridden_result["outcome"] == OUTCOME_OK
+    assert [item["name"] for item in overridden_result["result"]["consumers"]] == ["Geyser"]
 
 
 async def test_role_assignments_and_bindings_survive_resync_and_rebuild(

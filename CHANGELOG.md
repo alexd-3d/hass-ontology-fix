@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.5
+
+### Changed
+
+- Internal: corrected an outdated integration test for active consumers. No change in behaviour.
+
 ## 4.7.4
 
 ### Fixed
