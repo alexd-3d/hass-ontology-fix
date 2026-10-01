@@ -5,6 +5,16 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.4
+
+### Fixed
+
+- MCP `tools/list` no longer fails. `low_battery_areas` and `active_consumers` were advertised without an input schema, so every client asking for the tool list got an error. Both tools now have schemas and can be called over MCP.
+
+### Removed
+
+- `supplied_targets` is no longer listed as an MCP tool. It was advertised but never implemented.
+
 ## 4.7.3
 
 ### Fixed

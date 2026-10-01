@@ -596,7 +596,6 @@ MCP_TOOL_NAMES = (
     "export_context",
     "low_battery_areas",
     "active_consumers",
-    "supplied_targets",
 )
 
 # Assist intent identifiers for relationship questions.

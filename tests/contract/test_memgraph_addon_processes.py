@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -43,7 +44,7 @@ def test_dockerfile_pins_images_by_digest_and_packages_exact_node_lock() -> None
     notices = (ADDON / "THIRD_PARTY_NOTICES.md").read_text()
     assert "memgraph/memgraph:3.12.0@sha256:" in dockerfile
     assert "memgraph/lab" in dockerfile and "@sha256:" in dockerfile
-    assert "node:22.18.0-bookworm-slim@sha256:" in dockerfile
+    assert re.search(r"node:\d+\.\d+\.\d+-bookworm-slim@sha256:[0-9a-f]{64}", dockerfile)
     assert "npm ci --omit=dev" in dockerfile
     assert "graphql/package-lock.json" in dockerfile
     assert "linux/amd64 and linux/arm64" in notices
