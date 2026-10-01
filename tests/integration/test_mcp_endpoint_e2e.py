@@ -17,6 +17,7 @@ from custom_components.ontology.const import (
     CONF_MCP_ENABLED,
     CONF_PORT,
     DOMAIN,
+    MCP_TOOL_NAMES,
 )
 from custom_components.ontology.memgraph_client import MemgraphClient
 
@@ -79,7 +80,7 @@ async def test_mcp_endpoint_enabled_initialize_list_call_round_trip(
         _Request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     )
     list_body = json.loads(list_response.body)
-    assert len(list_body["result"]["tools"]) == 8
+    assert len(list_body["result"]["tools"]) == len(MCP_TOOL_NAMES)
 
     call_response = await view.post(
         _Request(

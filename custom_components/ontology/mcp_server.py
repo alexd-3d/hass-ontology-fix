@@ -106,7 +106,28 @@ _TOOL_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "required": ["export_type"],
     },
+    "low_battery_areas": {
+        "type": "object",
+        "properties": {
+            "threshold_percentage": {"type": "number", "minimum": 1, "maximum": 100},
+            "max_age_hours": {"type": "number", "exclusiveMinimum": 0},
+            "limit": {"type": "integer", "minimum": 1},
+        },
+    },
+    "active_consumers": {
+        "type": "object",
+        "properties": {
+            "threshold_watts": {"type": "number", "minimum": 0},
+            "max_age_hours": {"type": "number", "exclusiveMinimum": 0},
+            "limit": {"type": "integer", "minimum": 1},
+        },
+    },
 }
+
+
+def _optional_arguments(arguments: dict[str, Any], names: tuple[str, ...]) -> dict[str, Any]:
+    """Pick the supplied optional tool arguments so omitted ones keep their defaults."""
+    return {name: arguments[name] for name in names if arguments.get(name) is not None}
 
 
 def _token_store(hass: HomeAssistant, entry_id: str) -> Store:
@@ -351,6 +372,20 @@ class OntologyMcpView(HomeAssistantView):
                 elif name == "impact_analysis":
                     tool_result = await impact_analysis.analyze(
                         client, arguments.get("target_type", ""), arguments.get("target", "")
+                    )
+                elif name == "low_battery_areas":
+                    tool_result = await query_tools.low_battery_areas(
+                        client,
+                        **_optional_arguments(
+                            arguments, ("threshold_percentage", "max_age_hours", "limit")
+                        ),
+                    )
+                elif name == "active_consumers":
+                    tool_result = await query_tools.active_consumers(
+                        client,
+                        **_optional_arguments(
+                            arguments, ("threshold_watts", "max_age_hours", "limit")
+                        ),
                     )
                 elif name == "export_context":
                     tool_result = await context_export.export(

@@ -45,7 +45,7 @@ async def test_initialize_declares_tools_capability_only(hass) -> None:
     assert body["result"]["capabilities"] == {"tools": {}}
 
 
-async def test_tools_list_returns_exactly_the_eight_read_only_tools_with_input_schema(hass) -> None:
+async def test_tools_list_returns_every_read_only_tool_with_input_schema(hass) -> None:
     view, token = await _make_view(hass, "mcp_list")
     request = _FakeRequest(
         remote="127.0.0.1",
@@ -56,7 +56,7 @@ async def test_tools_list_returns_exactly_the_eight_read_only_tools_with_input_s
     body = json.loads(response.body)
     tools = body["result"]["tools"]
     assert {tool["name"] for tool in tools} == set(MCP_TOOL_NAMES)
-    assert len(tools) == 8
+    assert len(tools) == len(MCP_TOOL_NAMES)
     for tool in tools:
         assert "inputSchema" in tool
         assert tool["inputSchema"]["type"] == "object"
@@ -81,6 +81,48 @@ async def test_tools_call_success_response_shape(hass) -> None:
     assert body["result"]["content"][0]["type"] == "text"
     tool_result = json.loads(body["result"]["content"][0]["text"])
     assert tool_result["result_type"] == "not_found"  # empty rows -> not resolved
+
+
+async def test_tools_call_low_battery_areas_forwards_only_supplied_arguments(hass) -> None:
+    client = AsyncMock()
+    client.run_query = AsyncMock(return_value=[])
+    client.run_query_limited = AsyncMock(return_value=([], False))
+    view, token = await _make_view(hass, "mcp_low_battery", client=client)
+    request = _FakeRequest(
+        remote="127.0.0.1",
+        headers={"Authorization": f"Bearer {token}"},
+        body={
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {"name": "low_battery_areas", "arguments": {"threshold_percentage": 15}},
+        },
+    )
+    response = await view.post(request)
+    body = json.loads(response.body)
+    tool_result = json.loads(body["result"]["content"][0]["text"])
+    assert tool_result["result_type"] == "low_battery_areas"
+
+
+async def test_tools_call_active_consumers_uses_defaults_without_arguments(hass) -> None:
+    client = AsyncMock()
+    client.run_query = AsyncMock(return_value=[])
+    client.run_query_limited = AsyncMock(return_value=([], False))
+    view, token = await _make_view(hass, "mcp_consumers", client=client)
+    request = _FakeRequest(
+        remote="127.0.0.1",
+        headers={"Authorization": f"Bearer {token}"},
+        body={
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {"name": "active_consumers"},
+        },
+    )
+    response = await view.post(request)
+    body = json.loads(response.body)
+    tool_result = json.loads(body["result"]["content"][0]["text"])
+    assert tool_result["result_type"] == "active_consumers"
 
 
 async def test_tools_call_write_rejection_is_a_jsonrpc_error(hass) -> None:
