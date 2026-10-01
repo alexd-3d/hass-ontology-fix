@@ -18,7 +18,6 @@ from homeassistant.components.script import entities_in_script
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import area_registry as ar
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import floor_registry as fr
 from homeassistant.helpers import label_registry as lr
@@ -68,6 +67,7 @@ from .const import (
     SOURCE_GENERATED,
     SOURCE_HOME_ASSISTANT,
 )
+from .device_registry_compat import get_device, iter_devices
 from .memgraph_client import MemgraphClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -309,7 +309,7 @@ async def collect_areas(hass: HomeAssistant, client: MemgraphClient) -> list[str
 
 async def collect_devices(hass: HomeAssistant, client: MemgraphClient) -> list[str]:
     """Discover HA devices; may exist with no area (FR-006). Returns discovered ids."""
-    devices = list(dr.async_get(hass).devices.values())
+    devices = list(iter_devices(hass))
     await merge_nodes_bulk(
         client,
         LABEL_DEVICE,
@@ -749,8 +749,7 @@ async def update_device(hass: HomeAssistant, client: MemgraphClient, device_id: 
 
     Treats a since-deleted device as a removal (T045a).
     """
-    registry = dr.async_get(hass)
-    device = registry.devices.get(device_id)
+    device = get_device(hass, device_id)
     if device is None:
         await _delete_node(client, LABEL_DEVICE, device_id)
         return

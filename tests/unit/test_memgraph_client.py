@@ -7,9 +7,13 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from neo4j.exceptions import ServiceUnavailable
+from neo4j.exceptions import ServiceUnavailable, TransientError
 
-from custom_components.ontology.memgraph_client import CannotConnect, MemgraphClient
+from custom_components.ontology.memgraph_client import (
+    RETRY_MAX_ATTEMPTS,
+    CannotConnect,
+    MemgraphClient,
+)
 
 
 class _ManagedSession:
@@ -93,3 +97,40 @@ async def test_execute_write_preserves_cancellation() -> None:
 
     assert session.committed is False
     assert session.rolled_back is True
+
+
+async def test_run_query_with_retry_retries_transaction_conflicts(monkeypatch) -> None:
+    monkeypatch.setattr("custom_components.ontology.memgraph_client.RETRY_INITIAL_DELAY_SECONDS", 0)
+    client = MemgraphClient("localhost", 7687)
+    calls = 0
+
+    async def _run_query(query: str, parameters: Any = None) -> list[dict[str, Any]]:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise TransientError("Cannot resolve conflicting transactions")
+        return [{"ok": True}]
+
+    monkeypatch.setattr(client, "run_query", _run_query)
+
+    assert await client.run_query_with_retry("RETURN 1") == [{"ok": True}]
+    assert calls == 3
+
+
+async def test_run_query_with_retry_raises_transaction_conflict_when_exhausted(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("custom_components.ontology.memgraph_client.RETRY_INITIAL_DELAY_SECONDS", 0)
+    client = MemgraphClient("localhost", 7687)
+    calls = 0
+
+    async def _run_query(query: str, parameters: Any = None) -> list[dict[str, Any]]:
+        nonlocal calls
+        calls += 1
+        raise TransientError("Cannot resolve conflicting transactions")
+
+    monkeypatch.setattr(client, "run_query", _run_query)
+
+    with pytest.raises(TransientError):
+        await client.run_query_with_retry("RETURN 1")
+    assert calls == RETRY_MAX_ATTEMPTS

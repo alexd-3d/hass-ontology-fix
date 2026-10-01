@@ -183,7 +183,7 @@ def test_ieee_to_device_ids_maps_z2m_and_bridge_identifiers(hass) -> None:
         "b": SimpleNamespace(id="dev-b", identifiers={("mqtt", "zigbee2mqtt_bridge_0xDEF")}),
         "c": SimpleNamespace(id="dev-c", identifiers={("hue", "zigbee2mqtt_0x123")}),
     }
-    with patch.object(mesh_sync.dr, "async_get", return_value=SimpleNamespace(devices=devices)):
+    with patch.object(mesh_sync, "iter_devices", return_value=iter(devices.values())):
         mapping = mesh_sync._ieee_to_device_ids(hass)
 
     assert mapping == {"0xabc": "dev-a", "0xdef": "dev-b"}
