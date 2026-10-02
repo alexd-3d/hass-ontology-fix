@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.6
+
+### Fixed
+
+- A Memgraph transaction conflict ("Cannot resolve conflicting transactions") during the energy-role step of a resync is now retried like other temporary failures instead of leaving an unhandled task error in the log.
+
 ## 4.7.5
 
 ### Changed

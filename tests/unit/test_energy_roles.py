@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from neo4j.exceptions import TransientError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ontology.const import (
@@ -18,6 +20,7 @@ from custom_components.ontology.const import (
     SOURCE_INFERRED,
     SOURCE_USER,
 )
+from custom_components.ontology.memgraph_client import MemgraphClient
 from custom_components.ontology.semantic_classifier import infer_energy_role
 from custom_components.ontology.user_knowledge import (
     EnergyRoleRejected,
@@ -273,20 +276,51 @@ async def test_reconciliation_upserts_inferred_source_and_repairs_bindings(hass)
         },
     )
     client = AsyncMock()
-    client.run_query.return_value = []
+    client.run_query_with_retry.return_value = []
 
     reconciled = await async_reconcile_energy_roles(hass, client)
 
     assert reconciled == 1
     inferred_write = next(
         call
-        for call in client.run_query.await_args_list
+        for call in client.run_query_with_retry.await_args_list
         if "MERGE (assignment:EnergyRoleAssignment" in call.args[0]
     )
     assert inferred_write.args[1]["assignment_id"] == energy_role_assignment_id(
         SOURCE_INFERRED, "sensor.solar_output"
     )
     assert inferred_write.args[1]["source"] == SOURCE_INFERRED
-    repair_query = client.run_query.await_args_list[-1].args[0]
+    repair_query = client.run_query_with_retry.await_args_list[-1].args[0]
     assert "DELETE binding" in repair_query
     assert "MERGE (assignment)-[binding:ASSIGNS_ROLE_TO]->(entity)" in repair_query
+
+
+async def test_reconciliation_retries_transaction_conflicts(hass, monkeypatch) -> None:
+    """A Memgraph transaction conflict during a resync is retried, not raised."""
+    monkeypatch.setattr(
+        "custom_components.ontology.memgraph_client.RETRY_INITIAL_DELAY_SECONDS", 0
+    )
+    hass.states.async_set(
+        "sensor.solar_output",
+        "500",
+        {
+            "device_class": "power",
+            "unit_of_measurement": "W",
+            "friendly_name": "Solar generation",
+        },
+    )
+    client = MemgraphClient("localhost", 7687)
+    upsert_attempts = 0
+
+    async def _run_query(query: str, parameters: Any = None) -> list[dict[str, Any]]:
+        nonlocal upsert_attempts
+        if "MERGE (assignment:EnergyRoleAssignment" in query:
+            upsert_attempts += 1
+            if upsert_attempts == 1:
+                raise TransientError("Cannot resolve conflicting transactions")
+        return []
+
+    monkeypatch.setattr(client, "run_query", _run_query)
+
+    assert await async_reconcile_energy_roles(hass, client) == 1
+    assert upsert_attempts == 2

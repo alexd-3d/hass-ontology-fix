@@ -149,7 +149,7 @@ async def _upsert_inferred_energy_role(
     client: MemgraphClient, entity_id: str, role: str
 ) -> None:
     now = datetime.now(UTC).isoformat()
-    await client.run_query(
+    await client.run_query_with_retry(
         f"MATCH (entity:{LABEL_ENTITY} {{ha_id: $entity_id}}) "
         f"MERGE (assignment:{LABEL_ENERGY_ROLE_ASSIGNMENT} "
         "{ha_id: $assignment_id}) "
@@ -172,7 +172,7 @@ async def _upsert_inferred_energy_role(
 
 async def async_repair_energy_role_bindings(client: MemgraphClient) -> None:
     """Recreate generated bindings while retaining unresolved statements."""
-    await client.run_query(
+    await client.run_query_with_retry(
         f"MATCH (assignment:{LABEL_ENERGY_ROLE_ASSIGNMENT}) "
         f"OPTIONAL MATCH (assignment)-[binding:{REL_ASSIGNS_ROLE_TO}]->() "
         "DELETE binding "
@@ -208,7 +208,7 @@ async def async_reconcile_energy_role_for_entity(
     """
     role = infer_energy_role(hass, entity_id)
     if role is None:
-        await client.run_query(
+        await client.run_query_with_retry(
             f"MATCH (assignment:{LABEL_ENERGY_ROLE_ASSIGNMENT} "
             "{ha_id: $assignment_id, source: $source}) "
             "DETACH DELETE assignment",
