@@ -26,6 +26,22 @@ This add-on has no configurable options. The Ontology integration
 auto-discovers the GraphQL URL and bearer token via the Supervisor Discovery
 API when both the integration and this add-on are installed.
 
+## Runtime flags
+
+Memgraph is started with these flags (see `supervisor.conf`), in addition to the
+image defaults:
+
+| Flag | Value | Why |
+|---|---|---|
+| `--telemetry-enabled` | `false` | No data is sent to Memgraph. Telemetry is off by default in this add-on. |
+| `--storage-snapshot-interval-sec` | `3600` | One snapshot per hour. The write-ahead log (on by default) provides durability between snapshots, and a snapshot is also written on a clean stop. |
+| `--storage-delta-on-identical-property-update` | `false` | Re-writing an unchanged property value does not create database history. |
+| `--log-min-duration-ms` | `1000` | Queries taking one second or longer are logged with a `[slow-query]` tag. The log line contains the query text. |
+
+To check the values the running database actually uses, call the
+`ontology.query` service with the query `SHOW CONFIG` and look for the flag
+name with dashes written as underscores (for example `telemetry_enabled`).
+
 ## Memgraph Lab (Advanced Workspace)
 
 Memgraph Lab is available **only** for Home Assistant administrators and
@@ -64,6 +80,7 @@ diagnostics, browser responses, or logs.
 
 - **GraphQL not reachable**: check the add-on log for `[GraphQL]` lines.
   The integration falls back to a direct Bolt connection automatically.
+- **Recurring CPU bursts**: look for `[slow-query]` lines in the add-on log; they name the query and its duration. No such line means the time is spent in Memgraph's own background work (snapshots, garbage collection).
 - **Lab shows "Enterprise required"**: Community edition is running.
   Lab is unavailable by design.
 - **Lab shows "Write probe succeeded"**: The Lab user has write access.
