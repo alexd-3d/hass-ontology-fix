@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.8.0
+
+### Added
+
+- New option **Keep sibling links in older mesh snapshots** (on by default, so nothing changes unless you turn it off). When off, each Zigbee mesh scan deletes the sibling, "none" and "previous child" links from every snapshot except the newest, which makes the graph much smaller. The newest snapshot, and so `mesh_health` and `mesh_link_walls`, keeps everything; older snapshots then only show parent/child links.
+
 ## 4.7.11
 
 ### Changed

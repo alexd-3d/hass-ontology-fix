@@ -273,3 +273,92 @@ async def test_links_are_written_in_batches_not_one_query_per_link(hass, mock_me
         if "UNWIND $rows" in call.args[0] and "MERGE (n:MeshLink" in call.args[0]
     ]
     assert [len(params["rows"]) for _q, params in batch_queries] == [250, 250, 100]
+
+# -- ON-040: pruning non-tree links from older snapshots ------------------------
+
+
+async def _scan(hass, client, **kwargs):
+    _register_fake_mqtt_publish_service(hass)
+
+    async def _fake_subscribe(hass_arg, topic, msg_callback, qos=0):
+        msg_callback(_FakeMessage(json.dumps(_SAMPLE_NETWORKMAP_RESPONSE)))
+        return lambda: None
+
+    with (
+        patch.object(mesh_sync.mqtt, "async_subscribe", side_effect=_fake_subscribe),
+        patch.object(mesh_sync.mqtt, "async_publish", new=AsyncMock()),
+    ):
+        return await mesh_sync.async_scan_zigbee_mesh(
+            hass,
+            client,
+            base_topic="zigbee2mqtt",
+            retention_days=30,
+            response_timeout_seconds=150.0,
+            **kwargs,
+        )
+
+
+def _prune_calls(client) -> list:
+    return [
+        call.args
+        for call in client.run_query_with_retry.call_args_list
+        if "l.relationship IS NOT NULL" in call.args[0]
+    ]
+
+
+async def test_scan_keeps_sibling_history_by_default(hass, mock_memgraph_client) -> None:
+    await _scan(hass, mock_memgraph_client)
+
+    assert _prune_calls(mock_memgraph_client) == []
+
+
+async def test_scan_prunes_older_snapshots_when_siblings_are_not_kept(
+    hass, mock_memgraph_client
+) -> None:
+    mock_memgraph_client.run_query_with_retry.return_value = [{"deleted": 0}]
+
+    await _scan(hass, mock_memgraph_client, keep_sibling_history=False)
+
+    queries = [call.args[0] for call in mock_memgraph_client.run_query_with_retry.call_args_list]
+    (prune_query, params), = _prune_calls(mock_memgraph_client)
+    # It runs after the new snapshot is written and after the age-based prune.
+    assert queries.index(prune_query) > max(i for i, q in enumerate(queries) if "UNWIND $rows" in q)
+    assert queries.index(prune_query) > max(
+        i for i, q in enumerate(queries) if "s.scanned_at < $cutoff" in q
+    )
+    assert params["newest"].startswith("mesh-")
+    assert params["tree"] == [0, 1]
+    assert "s.ha_id <> $newest" in prune_query
+    assert "l.relationship IS NOT NULL" in prune_query  # unknown links are kept
+    assert "DETACH DELETE l" in prune_query
+
+
+async def test_prune_loops_until_a_short_batch_and_sums_the_deletes() -> None:
+    client = AsyncMock()
+    client.run_query_with_retry.side_effect = [
+        [{"deleted": mesh_sync._WRITE_BATCH_SIZE}],
+        [{"deleted": mesh_sync._WRITE_BATCH_SIZE}],
+        [{"deleted": 7}],
+    ]
+
+    total = await mesh_sync._async_prune_history_siblings(client, "mesh-new")
+
+    assert total == 2 * mesh_sync._WRITE_BATCH_SIZE + 7
+    assert client.run_query_with_retry.await_count == 3
+
+
+async def test_prune_with_nothing_to_delete_runs_once() -> None:
+    client = AsyncMock()
+    client.run_query_with_retry.return_value = [{"deleted": 0}]
+
+    assert await mesh_sync._async_prune_history_siblings(client, "mesh-new") == 0
+    assert client.run_query_with_retry.await_count == 1
+
+
+async def test_prune_is_bounded() -> None:
+    client = AsyncMock()
+    client.run_query_with_retry.return_value = [{"deleted": mesh_sync._WRITE_BATCH_SIZE}]
+
+    await mesh_sync._async_prune_history_siblings(client, "mesh-new")
+
+    assert client.run_query_with_retry.await_count == mesh_sync._MAX_PRUNE_BATCHES

@@ -30,6 +30,7 @@ from .const import (
     CONF_MCP_ALLOWED_NETWORKS,
     CONF_MCP_ENABLED,
     CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    CONF_MESH_HISTORY_KEEP_SIBLINGS,
     CONF_MESH_SNAPSHOT_RETENTION_DAYS,
     CONF_MESH_SNAPSHOT_SCAN_HOUR,
     CONF_PASSWORD,
@@ -53,6 +54,7 @@ from .const import (
     DEFAULT_MCP_ALLOWED_NETWORKS,
     DEFAULT_MCP_ENABLED,
     DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    DEFAULT_MESH_HISTORY_KEEP_SIBLINGS,
     DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS,
     DEFAULT_MESH_SNAPSHOT_SCAN_HOUR,
     DEFAULT_PORT,
@@ -357,6 +359,15 @@ def _options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
         vol.Coerce(int),
         vol.Range(min=MIN_MESH_SNAPSHOT_RETENTION_DAYS, max=MAX_MESH_SNAPSHOT_RETENTION_DAYS),
     )
+    # ON-040: keep or prune non-tree links in older mesh snapshots.
+    schema_dict[
+        vol.Optional(
+            CONF_MESH_HISTORY_KEEP_SIBLINGS,
+            default=defaults.get(
+                CONF_MESH_HISTORY_KEEP_SIBLINGS, DEFAULT_MESH_HISTORY_KEEP_SIBLINGS
+            ),
+        )
+    ] = bool
     schema_dict[
         vol.Optional(
             CONF_MESH_SNAPSHOT_SCAN_HOUR,
@@ -433,6 +444,7 @@ class OntologyOptionsFlow(OptionsFlow):
                     CONF_EXCLUDED_ENTITIES,
                     CONF_ZIGBEE2MQTT_BASE_TOPIC,
                     CONF_MESH_SNAPSHOT_RETENTION_DAYS,
+                    CONF_MESH_HISTORY_KEEP_SIBLINGS,
                     CONF_MESH_SNAPSHOT_SCAN_HOUR,
                     CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
                     CONF_FLOOR_HEIGHT_M,
@@ -493,6 +505,10 @@ class OntologyOptionsFlow(OptionsFlow):
                         CONF_MESH_SNAPSHOT_RETENTION_DAYS: user_input.get(
                             CONF_MESH_SNAPSHOT_RETENTION_DAYS,
                             DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS,
+                        ),
+                        CONF_MESH_HISTORY_KEEP_SIBLINGS: user_input.get(
+                            CONF_MESH_HISTORY_KEEP_SIBLINGS,
+                            DEFAULT_MESH_HISTORY_KEEP_SIBLINGS,
                         ),
                         CONF_MESH_SNAPSHOT_SCAN_HOUR: user_input.get(
                             CONF_MESH_SNAPSHOT_SCAN_HOUR, DEFAULT_MESH_SNAPSHOT_SCAN_HOUR

@@ -308,6 +308,7 @@
           "excluded_entities": "Entities excluded from state-change sync (comma-separated entity_ids)",
           "zigbee2mqtt_base_topic": "Zigbee2MQTT base topic",
           "mesh_snapshot_retention_days": "Mesh snapshot retention (days)",
+          "mesh_history_keep_siblings": "Keep sibling links in older mesh snapshots (off keeps only parent/child links there, which makes the graph much smaller; the newest snapshot always keeps everything)",
           "mesh_snapshot_scan_hour": "Nightly mesh scan hour, 0-23 (empty disables the nightly scan)",
           "mesh_snapshot_response_timeout_seconds": "Mesh scan response timeout (seconds)",
           "coordinator_device_id": "Zigbee coordinator device (optional; the device that physically holds the coordinator radio, used for its floor-plan position)",

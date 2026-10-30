@@ -296,6 +296,11 @@ CONF_MESH_SNAPSHOT_RETENTION_DAYS = "mesh_snapshot_retention_days"
 DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS = 30
 MIN_MESH_SNAPSHOT_RETENTION_DAYS = 1
 MAX_MESH_SNAPSHOT_RETENTION_DAYS = 365
+# ON-040: when False, each scan deletes the non-tree (sibling, none,
+# previous-child) links from every snapshot except the newest. The
+# default keeps today's behaviour.
+CONF_MESH_HISTORY_KEEP_SIBLINGS = "mesh_history_keep_siblings"
+DEFAULT_MESH_HISTORY_KEEP_SIBLINGS = True
 # ON-019: used by ontology.mesh_link_walls for links between two floors.
 # ON-020: the HA device that physically holds the Zigbee coordinator radio
 # (e.g. a network Zigbee adapter). Z2M reports the coordinator as its own
