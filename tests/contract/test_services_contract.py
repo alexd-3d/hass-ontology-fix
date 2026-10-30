@@ -304,9 +304,12 @@ async def test_validate_service_runs_only_on_explicit_invocation(
         await hass.services.async_call(DOMAIN, SERVICE_RESYNC, {}, blocking=True)
 
         validate_query_markers = ("ValidationFinding", "missing_area", "orphan_")
+        # ON-035: index DDL (`CREATE INDEX ON :ValidationFinding(ha_id)`) runs at
+        # setup and is not a validation run.
         assert not any(
             any(marker in str(call) for marker in validate_query_markers)
             for call in mock_memgraph_client.run_query.await_args_list
+            if not str(call.args[0]).startswith("CREATE INDEX")
         )
         assert not any(
             any(marker in str(call) for marker in validate_query_markers)
