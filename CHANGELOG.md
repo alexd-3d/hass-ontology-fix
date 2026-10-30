@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.11
+
+### Changed
+
+- The two duration sensors are back to the short names "Spatial sync duration" and "Mesh scan duration"; the longer names from 4.7.10 did not fit dashboard tiles. Entity ids are unchanged.
+
 ## 4.7.10
 
 ### Fixed
