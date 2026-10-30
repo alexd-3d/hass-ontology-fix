@@ -5,6 +5,17 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.10
+
+### Fixed
+
+- The "Spatial sync duration" and "Mesh scan duration" sensors no longer go back to "Unknown" after every Home Assistant restart. They now keep their last known value (and the wall, pin and link counts shown in their attributes) until the next sync or scan replaces it. Before the very first run the attribute counts are empty instead of a misleading 0.
+
+### Changed
+
+- Both duration sensors now report seconds with the "duration" device class (for example 2.2 min instead of 133670.8 ms). Existing history in milliseconds is converted automatically.
+- The two sensors are now named "Ontology spatial sync duration" and "Ontology mesh scan duration" so it is clear which integration they belong to. Their entity ids are unchanged.
+
 ## 4.7.9
 
 ### Changed
