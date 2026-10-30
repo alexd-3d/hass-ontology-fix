@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.8
+
+### Changed
+
+- Memgraph add-on 3.12.2: telemetry is turned off, so the database no longer sends system information and graph statistics to Memgraph. Snapshots are written hourly instead of every 5 minutes (the write-ahead log keeps data safe in between), rewriting an unchanged value no longer creates database history, and queries taking a second or longer are logged as `[slow-query]` in the add-on log. See `memgraph_addon/CHANGELOG.md`. Update or rebuild the add-on to apply this; the integration itself is unchanged.
+
 ## 4.7.7
 
 ### Changed

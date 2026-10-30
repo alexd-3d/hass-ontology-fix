@@ -52,3 +52,35 @@ def test_dockerfile_pins_images_by_digest_and_packages_exact_node_lock() -> None
     assert "GraphQL.js `16.11.0` (MIT)" in notices
     assert "Apollo Server `5.5.1` (MIT)" in notices
     assert "Neo4j JavaScript Driver `6.2.0` (Apache-2.0)" in notices
+
+
+def _memgraph_command() -> list[str]:
+    supervisor = (ADDON / "supervisor.conf").read_text()
+    section = supervisor.split("[program:memgraph]", 1)[1].split("\n[program:", 1)[0]
+    line = next(line for line in section.splitlines() if line.startswith("command="))
+    return line.removeprefix("command=").split()
+
+
+def test_memgraph_runtime_flags_are_explicit() -> None:
+    """ON-039: telemetry off, hourly snapshots, no-op deltas off, slow-query log."""
+    flags = _memgraph_command()
+    assert "--telemetry-enabled=false" in flags
+    assert "--storage-snapshot-interval-sec=3600" in flags
+    assert "--storage-delta-on-identical-property-update=false" in flags
+    assert "--log-min-duration-ms=1000" in flags
+
+
+def test_memgraph_flags_keep_durability_on() -> None:
+    flags = _memgraph_command()
+    assert "--storage-wal-enabled=false" not in flags
+    assert not any(
+        flag.startswith("--storage-snapshot-interval-sec=") and flag.endswith("=0")
+        for flag in flags
+    )
+    assert "--storage-snapshot-on-exit=false" not in flags
+
+
+def test_addon_version_and_changelog_agree() -> None:
+    config = yaml.safe_load((ADDON / "config.yaml").read_text())
+    changelog = (ADDON / "CHANGELOG.md").read_text()
+    assert f"## {config['version']}" in changelog

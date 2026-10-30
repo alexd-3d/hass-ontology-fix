@@ -1,5 +1,5 @@
 name: Memgraph
-version: "3.12.0"
+version: "3.12.2"
 slug: memgraph
 description: >-
   Memgraph graph database — the backing store for the Home Assistant Ontology
