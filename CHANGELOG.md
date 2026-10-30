@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.7
+
+### Changed
+
+- Graph lookups by Home Assistant id now use database indexes on the large node types (entities, devices, validation findings and Zigbee mesh links), so sync batches, resyncs and mesh scans spend less time searching. Small node types stay unindexed on purpose to keep memory use down. The indexes are created automatically on the next start; nothing else changes.
+
 ## 4.7.6
 
 ### Fixed

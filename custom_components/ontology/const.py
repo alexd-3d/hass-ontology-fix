@@ -435,6 +435,26 @@ SEMANTIC_TYPE_LABELS = (
     LABEL_CAMERA,
 )
 
+# ON-035: labels that get a label+property index on `ha_id`, created by
+# `schema_migrations`. Memgraph has no automatic label index here, so an
+# unindexed `MATCH/MERGE (n:Label {ha_id: ...})` scans every node in the graph
+# (`ScanAll`), whatever the label. An index is only worth its memory (measured
+# ~8 MiB RSS for 26 indexes on a ~14k-node graph) on labels that are large or
+# looked up in bulk, so the many small labels (Home, Floor, Area, Domain,
+# Integration, Label, Automation, Scene, Script, SemanticType, Dashboard, Wall,
+# MeshSnapshot and the semantic asset labels, all under ~200 nodes) are
+# deliberately not indexed. The two energy labels were already indexed.
+# Sizes are from a real install: MeshLink ~10k, Entity ~2k, ValidationFinding
+# ~800, Device ~150.
+HA_ID_INDEXED_LABELS = (
+    LABEL_ENTITY,
+    LABEL_DEVICE,
+    LABEL_MESH_LINK,
+    LABEL_VALIDATION_FINDING,
+    LABEL_SUPPLY_ASSOCIATION,
+    LABEL_ENERGY_ROLE_ASSIGNMENT,
+)
+
 # Relationship types (data-model.md v2 additions)
 REL_CLASSIFIED_AS = "CLASSIFIED_AS"
 REL_MEASURED_BY = "MEASURED_BY"

@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from custom_components.ontology.const import (
+    HA_ID_INDEXED_LABELS,
     SCHEMA_PREVIOUS_VERSION,
     SCHEMA_VERSION,
 )
@@ -99,3 +100,7 @@ async def test_exact_predecessor_migrates_idempotently_without_touching_user_dat
         if row.get("property") == ["ha_id"]
     }
     assert {"SupplyAssociation", "EnergyRoleAssignment"} <= indexed_labels
+    # ON-035: every label looked up by ha_id is indexed, and a second run adds
+    # no duplicate index rows.
+    assert set(HA_ID_INDEXED_LABELS) <= indexed_labels
+    assert len(indexes) == len(set(HA_ID_INDEXED_LABELS))
