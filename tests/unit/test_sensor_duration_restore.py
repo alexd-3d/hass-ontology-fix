@@ -47,12 +47,12 @@ def test_duration_sensors_are_duration_class_in_seconds(hass, mock_memgraph_clie
 
 
 @pytest.mark.parametrize("path", ["strings.json", "translations/en.json"])
-def test_duration_sensor_names_mention_ontology(path) -> None:
+def test_duration_sensor_names_stay_short(path) -> None:
     translations = json.loads((COMPONENT_DIR / path).read_text(encoding="utf-8"))
     names = translations["entity"]["sensor"]
 
-    assert names["ontology_spatial_sync_duration"]["name"] == "Ontology spatial sync duration"
-    assert names["ontology_mesh_scan_duration"]["name"] == "Ontology mesh scan duration"
+    assert names["ontology_spatial_sync_duration"]["name"] == "Spatial sync duration"
+    assert names["ontology_mesh_scan_duration"]["name"] == "Mesh scan duration"
 
 
 async def test_duration_sensors_report_seconds(hass, mock_memgraph_client) -> None:
