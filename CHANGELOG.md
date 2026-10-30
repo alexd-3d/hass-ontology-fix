@@ -5,6 +5,12 @@ below track `custom_components/ontology/manifest.json`. See
 `memgraph_addon/CHANGELOG.md` for the separate Memgraph add-on/Docker image
 changelog.
 
+## 4.7.9
+
+### Changed
+
+- Plain state changes are now written to the graph with one bulk query per batch instead of about eight queries per entity. Only entities that already exist in the graph take this path; new, removed and registry-changed entities are handled exactly as before, and a failed bulk write falls back to the old per-entity writes. The resulting graph is identical.
+
 ## 4.7.8
 
 ### Changed

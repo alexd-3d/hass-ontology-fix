@@ -429,13 +429,31 @@ async def collect_entities(
     return [e.entity_id for e in entries], domains, integrations
 
 
-_ENTITY_BULK_QUERY = (
-    "UNWIND $rows AS row "
-    f"MERGE (n:{LABEL_ENTITY} {{ha_id: row.ha_id}}) "
+# ON-036: the measurement properties cleared before every Entity write. Shared
+# by the single-entity write, the full-sync bulk write and the state-only bulk
+# write so the three can never drift apart.
+_ENTITY_MEASUREMENT_REMOVE = (
     f"REMOVE n.{MEASUREMENT_KIND}, n.{MEASUREMENT_STATUS}, "
     f"n.{MEASUREMENT_BATTERY_PERCENTAGE}, n.{MEASUREMENT_POWER_WATTS}, "
     f"n.{MEASUREMENT_LAST_UPDATED}, n.{MEASUREMENT_LAST_UPDATED_EPOCH} "
+)
+
+_ENTITY_BULK_QUERY = (
+    "UNWIND $rows AS row "
+    f"MERGE (n:{LABEL_ENTITY} {{ha_id: row.ha_id}}) "
+    f"{_ENTITY_MEASUREMENT_REMOVE}"
     "SET n += row.properties, n += row.measurement_properties"
+)
+
+# ON-036: state-only variant. MATCH (not MERGE) so an entity that has no node
+# yet is skipped here and falls back to the full write, which also creates its
+# Domain/Device/Area/Integration/Label relationships.
+_ENTITY_STATE_BULK_QUERY = (
+    "UNWIND $rows AS row "
+    f"MATCH (n:{LABEL_ENTITY} {{ha_id: row.ha_id}}) "
+    f"{_ENTITY_MEASUREMENT_REMOVE}"
+    "SET n += row.properties, n += row.measurement_properties "
+    "RETURN row.ha_id AS ha_id"
 )
 
 
@@ -488,9 +506,7 @@ async def _write_entity_node_and_relationships(
     props, measurement_props = _entity_node_properties(hass, entity_id, context)
     await client.run_query_with_retry(
         f"MERGE (n:{LABEL_ENTITY} {{ha_id: $ha_id}}) "
-        f"REMOVE n.{MEASUREMENT_KIND}, n.{MEASUREMENT_STATUS}, "
-        f"n.{MEASUREMENT_BATTERY_PERCENTAGE}, n.{MEASUREMENT_POWER_WATTS}, "
-        f"n.{MEASUREMENT_LAST_UPDATED}, n.{MEASUREMENT_LAST_UPDATED_EPOCH} "
+        f"{_ENTITY_MEASUREMENT_REMOVE}"
         "SET n += $properties, n += $measurement_properties",
         {
             "ha_id": entity_id,
@@ -533,6 +549,41 @@ async def _write_entity_node_and_relationships(
         await merge_relationship(
             client, LABEL_ENTITY, entity_id, REL_HAS_LABEL, LABEL_LABEL, label_id
         )
+
+
+async def update_entity_states_bulk(
+    hass: HomeAssistant,
+    client: MemgraphClient,
+    contexts: dict[str, EntitySyncContext | None],
+) -> set[str]:
+    """ON-036: write the node properties of many already-synced entities at once.
+
+    A `state_changed` event can only change what `_entity_node_properties`
+    returns (state, name, device_class, unit and the measurement properties);
+    Domain/Device/Area/Integration/Label relationships come from the entity
+    registry, whose own events take the full per-entity path. So a batch of
+    plain state changes needs one ``UNWIND`` query per chunk instead of ~8
+    queries per entity.
+
+    Returns the ids whose existing Entity node was updated. Entities without
+    a node yet are not in the result; the caller sends them through
+    :func:`update_entity`, which also creates their relationships.
+    """
+    rows = []
+    for entity_id, context in contexts.items():
+        properties, measurement_properties = _entity_node_properties(hass, entity_id, context)
+        rows.append(
+            {
+                "ha_id": entity_id,
+                "properties": properties,
+                "measurement_properties": measurement_properties,
+            }
+        )
+    updated: set[str] = set()
+    for chunk in _chunks(rows):
+        result = await client.run_query_with_retry(_ENTITY_STATE_BULK_QUERY, {"rows": chunk})
+        updated.update(record["ha_id"] for record in result)
+    return updated
 
 
 def _referenced_entity_ids(hass: HomeAssistant, domain: str, entity_id: str) -> list[str]:

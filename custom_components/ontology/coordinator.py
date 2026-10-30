@@ -497,6 +497,38 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
             else:
                 self.change_buffer.publish_upsert([node_id], [], ["state", "ha_id"])
 
+    async def _write_state_only_updates(
+        self, entities: dict[str, graph_builder.EntitySyncContext | None]
+    ) -> set[str]:
+        """ON-036: bulk-write the node properties of entities that already
+        have a node and are not being added, removed or skipped.
+
+        Returns the ids that were written. Any entity not returned, and
+        every entity if the bulk write fails, must still go through
+        `graph_builder.update_entity`.
+        """
+        registry = er.async_get(self.hass)
+        candidates: dict[str, graph_builder.EntitySyncContext | None] = {}
+        for entity_id, context in entities.items():
+            entry = registry.entities.get(entity_id)
+            if entry is not None and entry.platform == DOMAIN:
+                continue  # the integration's own entities are skipped by update_entity
+            if self.hass.states.get(entity_id) is None:
+                continue  # removed or stateless: needs the full (delete/create) path
+            candidates[entity_id] = context
+        if not candidates:
+            return set()
+        try:
+            updated = await graph_builder.update_entity_states_bulk(
+                self.hass, self.memgraph_client, candidates
+            )
+        except Exception as err:  # noqa: BLE001 - fall back to per-entity writes
+            _LOGGER.debug(
+                "Bulk state update failed (%s); using per-entity writes", redact_exception(err)
+            )
+            return set()
+        return set(updated) & set(candidates)
+
     async def _execute_entity_sync_batch(
         self, entities: dict[str, graph_builder.EntitySyncContext | None]
     ) -> dict[str, Exception | None]:
@@ -537,6 +569,16 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         entity was removed outright (same `removed` set used for the counts
         refresh above).
 
+        ON-036: a `state_changed` event can only change an Entity node's own
+        properties (state, name, device_class, unit, measurement) - the
+        Domain/Device/Area/Integration/Label relationships come from the
+        entity registry, whose events take the full `_execute_entity_sync`
+        path. So entities that already have a node are written together by
+        `_write_state_only_updates` in one bulk query per chunk instead of
+        ~8 queries each; everything else (no node yet, removed, no state,
+        the integration's own entities, or any bulk failure) keeps the full
+        per-entity `update_entity` path.
+
         Each entity's own graph write is still isolated in its own
         try/except so one bad entity can't abort the rest of the batch -
         failures are reported per-entity via the returned map, mirroring
@@ -544,11 +586,13 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
         """
         results: dict[str, Exception | None] = {}
         any_role_assigned = False
+        state_updated = await self._write_state_only_updates(entities)
         for entity_id, context in entities.items():
             try:
-                await graph_builder.update_entity(
-                    self.hass, self.memgraph_client, entity_id, context
-                )
+                if entity_id not in state_updated:
+                    await graph_builder.update_entity(
+                        self.hass, self.memgraph_client, entity_id, context
+                    )
                 if await user_knowledge.async_reconcile_energy_role_for_entity(
                     self.hass, self.memgraph_client, entity_id
                 ):

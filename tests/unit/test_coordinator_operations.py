@@ -20,6 +20,15 @@ from custom_components.ontology.coordinator import OntologyCoordinator
 _CO = "custom_components.ontology.coordinator"
 
 
+@pytest.fixture(autouse=True)
+def _no_state_fast_path():
+    """ON-036: an empty bulk result sends every batch entity through
+    `update_entity`, which is the path the ON-002/ON-008 tests here cover. The
+    fast path itself is covered in test_entity_state_fast_path.py."""
+    with patch(f"{_CO}.graph_builder.update_entity_states_bulk", AsyncMock(return_value=set())):
+        yield
+
+
 def _coordinator(hass, options: dict | None = None) -> OntologyCoordinator:
     entry = MagicMock()
     entry.options = options or {}
