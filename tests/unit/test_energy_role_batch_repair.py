@@ -31,6 +31,7 @@ async def test_batch_skips_repair_when_nothing_could_go_stale(hass) -> None:
         patch("custom_components.ontology.coordinator.user_knowledge") as mock_uk,
     ):
         mock_gb.update_entity = AsyncMock()
+        mock_gb.update_entity_states_bulk = AsyncMock(return_value=set())
         mock_uk.async_reconcile_energy_role_for_entity = AsyncMock(return_value=False)
         mock_uk.async_repair_energy_role_bindings = AsyncMock()
 
@@ -56,6 +57,7 @@ async def test_batch_runs_repair_once_when_a_role_was_assigned(hass) -> None:
         patch("custom_components.ontology.coordinator.user_knowledge") as mock_uk,
     ):
         mock_gb.update_entity = AsyncMock()
+        mock_gb.update_entity_states_bulk = AsyncMock(return_value=set())
         mock_uk.async_reconcile_energy_role_for_entity = AsyncMock(
             side_effect=[True, False, False]
         )
@@ -85,6 +87,7 @@ async def test_batch_runs_repair_once_when_an_entity_was_removed(hass) -> None:
         patch("custom_components.ontology.coordinator.user_knowledge") as mock_uk,
     ):
         mock_gb.update_entity = AsyncMock()
+        mock_gb.update_entity_states_bulk = AsyncMock(return_value=set())
         mock_uk.async_reconcile_energy_role_for_entity = AsyncMock(return_value=False)
         mock_uk.async_repair_energy_role_bindings = AsyncMock()
 
