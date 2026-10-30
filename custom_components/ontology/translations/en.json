@@ -72,8 +72,8 @@
       "ontology_last_error": { "name": "Last error" },
       "ontology_schema_version": { "name": "Schema version" },
       "ontology_sync_activity": { "name": "Sync activity" },
-      "ontology_spatial_sync_duration": { "name": "Spatial sync duration" },
-      "ontology_mesh_scan_duration": { "name": "Mesh scan duration" }
+      "ontology_spatial_sync_duration": { "name": "Ontology spatial sync duration" },
+      "ontology_mesh_scan_duration": { "name": "Ontology mesh scan duration" }
     },
     "button": {
       "ontology_rebuild": { "name": "Rebuild" },

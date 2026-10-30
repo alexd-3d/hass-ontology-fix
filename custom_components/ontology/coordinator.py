@@ -231,13 +231,14 @@ class OntologyState:
     sync_activity_avg_batch_size: float = 0.0
     sync_activity_last_batch_ms: float | None = None
     # ON-015: duration/result of the last on-demand spatial layout sync.
-    # None until the button/service has run at least once.
+    # None until the button/service has run at least once (or, after a restart,
+    # until the sensor restores the last known values).
     spatial_sync_last_duration_ms: float | None = None
-    spatial_sync_last_walls: int = 0
-    spatial_sync_last_pinned_on_floor: int = 0
+    spatial_sync_last_walls: int | None = None
+    spatial_sync_last_pinned_on_floor: int | None = None
     # ON-016: duration/result of the last Zigbee mesh scan (nightly or manual).
     mesh_scan_last_duration_ms: float | None = None
-    mesh_scan_last_links: int = 0
+    mesh_scan_last_links: int | None = None
 
 
 class OperationInProgress(Exception):
