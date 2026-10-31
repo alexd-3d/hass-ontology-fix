@@ -16,6 +16,16 @@ Zigbee2MQTT network from the ontology graph. Everything here is read-only.
 Snapshots are kept for the configured retention (30 days by default). A scan
 takes a couple of minutes.
 
+Most links in a Zigbee neighbor table are sibling entries (relationship 2,
+plus "none" and "previous child"), which the tools below ignore except in the
+newest snapshot. The option **Keep sibling links in older mesh snapshots** is on
+by default. Turn it off to delete those non-tree links from every snapshot but
+the newest on each scan: the graph gets much smaller, the newest snapshot (and
+so `mesh_health` / `mesh_link_walls`) is unchanged, and history queries over
+older snapshots then only see parent/child links. Pruned links are not
+restored if you turn the option back on. To see the effect:
+`MATCH (l:MeshLink) RETURN l.relationship AS relationship, count(*) AS links`.
+
 ## Fastest path: `ontology.mesh_health`
 
 One call answers the usual questions. Response service, so pass

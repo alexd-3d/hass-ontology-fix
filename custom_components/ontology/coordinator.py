@@ -42,10 +42,12 @@ from .const import (
     CONF_AUTO_CLASSIFY,
     CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
     CONF_COORDINATOR_DEVICE_ID,
+    CONF_MESH_HISTORY_KEEP_SIBLINGS,
     CONF_MESH_SNAPSHOT_RETENTION_DAYS,
     CONF_ZIGBEE2MQTT_BASE_TOPIC,
     DEFAULT_AUTO_CLASSIFY,
     DEFAULT_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,
+    DEFAULT_MESH_HISTORY_KEEP_SIBLINGS,
     DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS,
     DEFAULT_ZIGBEE2MQTT_BASE_TOPIC,
     DOMAIN,
@@ -733,6 +735,9 @@ class OntologyCoordinator(DataUpdateCoordinator[OntologyState]):
                 ),
                 retention_days=options.get(
                     CONF_MESH_SNAPSHOT_RETENTION_DAYS, DEFAULT_MESH_SNAPSHOT_RETENTION_DAYS
+                ),
+                keep_sibling_history=options.get(
+                    CONF_MESH_HISTORY_KEEP_SIBLINGS, DEFAULT_MESH_HISTORY_KEEP_SIBLINGS
                 ),
                 response_timeout_seconds=options.get(
                     CONF_MESH_SNAPSHOT_RESPONSE_TIMEOUT_SECONDS,

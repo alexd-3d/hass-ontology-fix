@@ -10,6 +10,7 @@ import pytest
 
 from custom_components.ontology.const import (
     CONF_COORDINATOR_DEVICE_ID,
+    CONF_MESH_HISTORY_KEEP_SIBLINGS,
     CONF_MESH_SNAPSHOT_RETENTION_DAYS,
     CONF_ZIGBEE2MQTT_BASE_TOPIC,
     HEALTH_ERROR,
@@ -111,6 +112,17 @@ async def test_mesh_scan_empty_coordinator_device_option_means_unset(hass) -> No
         await coordinator.async_scan_zigbee_mesh()
 
     assert scan.await_args.kwargs["coordinator_device_id"] is None
+
+
+async def test_mesh_scan_passes_the_sibling_history_option(hass) -> None:
+    for options, expected in (({}, True), ({CONF_MESH_HISTORY_KEEP_SIBLINGS: False}, False)):
+        coordinator = _coordinator(hass, options)
+        with patch(
+            f"{_CO}.mesh_sync.async_scan_zigbee_mesh", AsyncMock(return_value={"links": 1})
+        ) as scan:
+            await coordinator.async_scan_zigbee_mesh()
+
+        assert scan.await_args.kwargs["keep_sibling_history"] is expected
 
 
 async def test_mesh_scan_failure_is_recorded_and_reraised(hass) -> None:

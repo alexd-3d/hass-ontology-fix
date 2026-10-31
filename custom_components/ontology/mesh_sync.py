@@ -168,8 +168,12 @@ async def async_scan_zigbee_mesh(
     retention_days: int,
     response_timeout_seconds: float,
     coordinator_device_id: str | None = None,
+    keep_sibling_history: bool = True,
 ) -> dict[str, int]:
     """Scan the live Zigbee mesh and write one MeshSnapshot to the graph.
+
+    ``keep_sibling_history=False`` (ON-040) then deletes the non-tree links
+    from every snapshot except this new one.
 
     ``coordinator_device_id`` (ON-020) re-points the coordinator's links at the
     HA device that physically holds its radio, since Z2M's own coordinator
@@ -242,6 +246,9 @@ async def async_scan_zigbee_mesh(
     )
 
     await _async_prune_old_snapshots(client, retention_days)
+    if not keep_sibling_history:
+        pruned = await _async_prune_history_siblings(client, snapshot_id)
+        _LOGGER.info("Zigbee mesh history: removed %d non-tree links from older snapshots", pruned)
     return {"links": link_count}
 
 
@@ -253,3 +260,41 @@ async def _async_prune_old_snapshots(client: MemgraphClient, retention_days: int
         "DETACH DELETE s, l",
         {"cutoff": cutoff},
     )
+
+
+# ON-040: Zigbee neighbor-table relationship codes 0 (parent) and 1 (child) are
+# the real tree links; everything else (sibling, none, previous child) is
+# neighbor-table noise. `relationship IS NULL` (unknown) is kept, like the mesh
+# tools treat it.
+_TREE_RELATIONSHIPS = (0, 1)
+_MAX_PRUNE_BATCHES = 200
+
+
+async def _async_prune_history_siblings(client: MemgraphClient, newest_snapshot_id: str) -> int:
+    """Delete non-tree links from every snapshot except the newest (ON-040).
+
+    Works in batches of ``_WRITE_BATCH_SIZE`` so the first run on an existing
+    install does not need one huge transaction, and stops after
+    ``_MAX_PRUNE_BATCHES`` batches (the rest goes on the next scan). Returns
+    how many links were deleted.
+    """
+    total = 0
+    for _ in range(_MAX_PRUNE_BATCHES):
+        rows = await client.run_query_with_retry(
+            f"MATCH (s:{LABEL_MESH_SNAPSHOT})-[:{REL_HAS_LINK}]->(l:{LABEL_MESH_LINK}) "
+            "WHERE s.ha_id <> $newest AND l.relationship IS NOT NULL "
+            "AND NOT l.relationship IN $tree "
+            "WITH l LIMIT $batch "
+            "DETACH DELETE l "
+            "RETURN count(*) AS deleted",
+            {
+                "newest": newest_snapshot_id,
+                "tree": list(_TREE_RELATIONSHIPS),
+                "batch": _WRITE_BATCH_SIZE,
+            },
+        )
+        deleted = int(rows[0]["deleted"]) if rows else 0
+        total += deleted
+        if deleted < _WRITE_BATCH_SIZE:
+            break
+    return total
